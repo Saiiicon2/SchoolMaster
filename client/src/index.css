@@ -1,0 +1,125 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: hsl(0, 0%, 100%);
+  --foreground: hsl(20, 14.3%, 4.1%);
+  --muted: hsl(60, 4.8%, 95.9%);
+  --muted-foreground: hsl(25, 5.3%, 44.7%);
+  --popover: hsl(0, 0%, 100%);
+  --popover-foreground: hsl(20, 14.3%, 4.1%);
+  --card: hsl(0, 0%, 100%);
+  --card-foreground: hsl(20, 14.3%, 4.1%);
+  --border: hsl(20, 5.9%, 90%);
+  --input: hsl(20, 5.9%, 90%);
+  --primary: hsl(207, 90%, 54%);
+  --primary-foreground: hsl(211, 100%, 99%);
+  --secondary: hsl(60, 4.8%, 95.9%);
+  --secondary-foreground: hsl(24, 9.8%, 10%);
+  --accent: hsl(60, 4.8%, 95.9%);
+  --accent-foreground: hsl(24, 9.8%, 10%);
+  --destructive: hsl(0, 84.2%, 60.2%);
+  --destructive-foreground: hsl(60, 9.1%, 97.8%);
+  --ring: hsl(20, 14.3%, 4.1%);
+  --radius: 0.5rem;
+  --chart-1: hsl(207, 90%, 54%);
+  --chart-2: hsl(147, 100%, 40%);
+  --chart-3: hsl(45, 100%, 60%);
+  --chart-4: hsl(0, 84.2%, 60.2%);
+  --chart-5: hsl(270, 95%, 70%);
+  --sidebar-background: hsl(0, 0%, 100%);
+  --sidebar-foreground: hsl(20, 14.3%, 4.1%);
+  --sidebar-primary: hsl(207, 90%, 54%);
+  --sidebar-primary-foreground: hsl(211, 100%, 99%);
+  --sidebar-accent: hsl(60, 4.8%, 95.9%);
+  --sidebar-accent-foreground: hsl(24, 9.8%, 10%);
+  --sidebar-border: hsl(20, 5.9%, 90%);
+  --sidebar-ring: hsl(20, 14.3%, 4.1%);
+  
+  /* Custom school management colors */
+  --school-primary: hsl(207, 90%, 54%);
+  --school-secondary: hsl(214, 82%, 43%);
+  --school-accent: hsl(219, 79%, 66%);
+  --school-success: hsl(147, 100%, 40%);
+  --school-warning: hsl(45, 100%, 60%);
+  --school-error: hsl(0, 84%, 60%);
+  --school-slate-50: hsl(210, 40%, 98%);
+  --school-slate-100: hsl(210, 40%, 96%);
+  --school-slate-200: hsl(214, 32%, 91%);
+  --school-slate-300: hsl(213, 27%, 84%);
+  --school-slate-400: hsl(215, 20%, 65%);
+  --school-slate-500: hsl(215, 16%, 47%);
+  --school-slate-600: hsl(215, 19%, 35%);
+  --school-slate-700: hsl(215, 25%, 27%);
+  --school-slate-800: hsl(217, 33%, 17%);
+  --school-slate-900: hsl(222, 84%, 5%);
+}
+
+.dark {
+  --background: hsl(240, 10%, 3.9%);
+  --foreground: hsl(0, 0%, 98%);
+  --muted: hsl(240, 3.7%, 15.9%);
+  --muted-foreground: hsl(240, 5%, 64.9%);
+  --popover: hsl(240, 10%, 3.9%);
+  --popover-foreground: hsl(0, 0%, 98%);
+  --card: hsl(240, 10%, 3.9%);
+  --card-foreground: hsl(0, 0%, 98%);
+  --border: hsl(240, 3.7%, 15.9%);
+  --input: hsl(240, 3.7%, 15.9%);
+  --primary: hsl(207, 90%, 54%);
+  --primary-foreground: hsl(211, 100%, 99%);
+  --secondary: hsl(240, 3.7%, 15.9%);
+  --secondary-foreground: hsl(0, 0%, 98%);
+  --accent: hsl(240, 3.7%, 15.9%);
+  --accent-foreground: hsl(0, 0%, 98%);
+  --destructive: hsl(0, 62.8%, 30.6%);
+  --destructive-foreground: hsl(0, 0%, 98%);
+  --ring: hsl(240, 4.9%, 83.9%);
+  --chart-1: hsl(207, 90%, 54%);
+  --chart-2: hsl(147, 100%, 40%);
+  --chart-3: hsl(45, 100%, 60%);
+  --chart-4: hsl(0, 84.2%, 60.2%);
+  --chart-5: hsl(270, 95%, 70%);
+  --sidebar-background: hsl(240, 10%, 3.9%);
+  --sidebar-foreground: hsl(0, 0%, 98%);
+  --sidebar-primary: hsl(207, 90%, 54%);
+  --sidebar-primary-foreground: hsl(211, 100%, 99%);
+  --sidebar-accent: hsl(240, 3.7%, 15.9%);
+  --sidebar-accent-foreground: hsl(0, 0%, 98%);
+  --sidebar-border: hsl(240, 3.7%, 15.9%);
+  --sidebar-ring: hsl(240, 4.9%, 83.9%);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+    font-family: 'Inter', sans-serif;
+  }
+}
+
+@layer utilities {
+  .school-primary {
+    color: var(--school-primary);
+  }
+  
+  .school-secondary {
+    color: var(--school-secondary);
+  }
+  
+  .bg-school-primary {
+    background-color: var(--school-primary);
+  }
+  
+  .bg-school-secondary {
+    background-color: var(--school-secondary);
+  }
+  
+  .border-school-primary {
+    border-color: var(--school-primary);
+  }
+}
