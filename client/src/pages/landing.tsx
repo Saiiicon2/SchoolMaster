@@ -1,8 +1,10 @@
+import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { GraduationCap, Users, BookOpen, Trophy } from "lucide-react";
 
 export default function Landing() {
+
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
@@ -18,12 +20,11 @@ export default function Landing() {
                 <p className="text-xs text-slate-500">School Management System</p>
               </div>
             </div>
-            <Button 
-              onClick={() => window.location.href = '/api/login'}
-              className="bg-primary hover:bg-primary/90"
-            >
-              Sign In
-            </Button>
+            <Link href="/login">
+              <Button className="bg-primary hover:bg-primary/90">
+                Sign In
+              </Button>
+            </Link>
           </div>
         </div>
       </header>
@@ -40,13 +41,14 @@ export default function Landing() {
             academic tracking, and communication tools designed for small to mid-sized schools.
           </p>
           <div className="mt-10">
-            <Button 
-              size="lg"
-              onClick={() => window.location.href = '/api/login'}
-              className="bg-primary hover:bg-primary/90 text-lg px-8 py-3"
-            >
-              Get Started
-            </Button>
+            <Link href="/login">
+              <Button 
+                size="lg"
+                className="bg-primary hover:bg-primary/90 text-lg px-8 py-3"
+              >
+                Get Started
+              </Button>
+            </Link>
           </div>
         </div>
 
@@ -118,14 +120,15 @@ export default function Landing() {
             Join educators who are already using EduAdmin to streamline their academic operations
             and improve student outcomes.
           </p>
-          <Button 
-            size="lg"
-            variant="secondary"
-            onClick={() => window.location.href = '/api/login'}
-            className="bg-white text-primary hover:bg-white/90 text-lg px-8 py-3"
-          >
-            Sign In to Your School
-          </Button>
+          <Link href="/login">
+            <Button 
+              size="lg"
+              variant="secondary"
+              className="bg-white text-primary hover:bg-white/90 text-lg px-8 py-3"
+            >
+              Sign In to Your School
+            </Button>
+          </Link>
         </div>
       </main>
 

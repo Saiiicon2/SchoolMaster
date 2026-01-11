@@ -1,119 +1,174 @@
 import {
-  pgTable,
+  sqliteTable,
   text,
-  varchar,
-  timestamp,
-  jsonb,
-  index,
-  serial,
+  blob,
   integer,
-  decimal,
-  boolean,
-  date,
-} from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+  index,
+  real,
+  primaryKey,
+} from "drizzle-orm/sqlite-core";
+import { relations, sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-// Session storage table - required for Replit Auth
-export const sessions = pgTable(
+// Session storage table - required for external OIDC auth
+export const sessions = sqliteTable(
   "sessions",
   {
-    sid: varchar("sid").primaryKey(),
-    sess: jsonb("sess").notNull(),
-    expire: timestamp("expire").notNull(),
+    sid: text("sid").primaryKey(),
+    sess: blob("sess").notNull(),
+    expire: integer("expire").notNull(),
   },
   (table) => [index("IDX_session_expire").on(table.expire)],
 );
 
-// User storage table - required for Replit Auth
-export const users = pgTable("users", {
-  id: varchar("id").primaryKey().notNull(),
-  email: varchar("email").unique(),
-  firstName: varchar("first_name"),
-  lastName: varchar("last_name"),
-  profileImageUrl: varchar("profile_image_url"),
-  role: varchar("role").notNull().default("student"), // 'admin' or 'student'
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+// User storage table - required for external OIDC auth
+export const users = sqliteTable("users", {
+  id: text("id").primaryKey().notNull(),
+  email: text("email").unique(),
+  password: text("password"),
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+  profileImageUrl: text("profile_image_url"),
+  role: text("role").notNull().default("student"), // 'admin', 'teacher', or 'student'
+  createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
 });
 
 // Levels table (Level 1, Level 2, etc.)
-export const levels = pgTable("levels", {
-  id: serial("id").primaryKey(),
-  name: varchar("name").notNull().unique(),
+export const levels = sqliteTable("levels", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull().unique(),
   description: text("description"),
   durationMonths: integer("duration_months").notNull().default(6),
-  isActive: boolean("is_active").notNull().default(true),
-  createdAt: timestamp("created_at").defaultNow(),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
 });
 
 // Students table
-export const students = pgTable("students", {
-  id: serial("id").primaryKey(),
-  studentNumber: varchar("student_number").notNull().unique(),
-  userId: varchar("user_id").references(() => users.id),
-  firstName: varchar("first_name").notNull(),
-  lastName: varchar("last_name").notNull(),
-  email: varchar("email").notNull().unique(),
+export const students = sqliteTable("students", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  studentNumber: text("student_number").notNull().unique(),
+  userId: text("user_id").references(() => users.id),
+  campusId: integer("campus_id").references(() => campuses.id),
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name").notNull(),
+  email: text("email").notNull().unique(),
   currentLevelId: integer("current_level_id").references(() => levels.id),
-  enrollmentDate: date("enrollment_date").notNull(),
-  status: varchar("status").notNull().default("active"), // 'active', 'graduated', 'suspended'
-  createdAt: timestamp("created_at").defaultNow(),
+  enrollmentDate: text("enrollment_date").notNull(),
+  status: text("status").notNull().default("active"), // 'active', 'graduated', 'suspended'
+  createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
+});
+
+// Campuses table
+export const campuses = sqliteTable("campuses", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull().unique(),
+  code: text("code").notNull().unique(),
+  address: text("address"),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
 });
 
 // Subjects table
-export const subjects = pgTable("subjects", {
-  id: serial("id").primaryKey(),
-  name: varchar("name").notNull(),
+export const subjects = sqliteTable("subjects", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
   description: text("description"),
   levelId: integer("level_id").references(() => levels.id).notNull(),
-  isActive: boolean("is_active").notNull().default(true),
-  createdAt: timestamp("created_at").defaultNow(),
+  createdById: text("created_by_id").references(() => users.id),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
+});
+
+// Teachers table
+export const teachers = sqliteTable("teachers", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: text("user_id").references(() => users.id).notNull().unique(),
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name").notNull(),
+  email: text("email").notNull().unique(),
+  employmentDate: text("employment_date").notNull(),
+  status: text("status").notNull().default("active"), // 'active', 'inactive'
+  createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
+});
+
+// Teacher Subject Assignment table (teachers can teach multiple subjects)
+export const teacherSubjects = sqliteTable("teacher_subjects", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  teacherId: integer("teacher_id").references(() => teachers.id).notNull(),
+  subjectId: integer("subject_id").references(() => subjects.id).notNull(),
+  assignedDate: text("assigned_date").notNull(),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
+});
+
+// Assessments table (tests, exams, continuous assessments)
+export const assessments = sqliteTable("assessments", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  subjectId: integer("subject_id").references(() => subjects.id).notNull(),
+  title: text("title").notNull(),
+  type: text("type").notNull(), // 'test', 'exam', 'continuous', 'assignment'
+  description: text("description"),
+  totalMarks: real("total_marks").notNull().default(100),
+  assessmentDate: text("assessment_date").notNull(),
+  createdById: text("created_by_id").references(() => users.id).notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
+});
+
+// Assessment Results table (student scores on assessments)
+export const assessmentResults = sqliteTable("assessment_results", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  assessmentId: integer("assessment_id").references(() => assessments.id).notNull(),
+  studentId: integer("student_id").references(() => students.id).notNull(),
+  score: real("score").notNull(),
+  enteredBy: text("entered_by").references(() => users.id).notNull(),
+  enteredAt: integer("entered_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
+  comments: text("comments"),
 });
 
 // Grades table
-export const grades = pgTable("grades", {
-  id: serial("id").primaryKey(),
+export const grades = sqliteTable("grades", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
   studentId: integer("student_id").references(() => students.id).notNull(),
   subjectId: integer("subject_id").references(() => subjects.id).notNull(),
-  score: decimal("score", { precision: 5, scale: 2 }).notNull(),
-  maxScore: decimal("max_score", { precision: 5, scale: 2 }).notNull().default("100"),
-  enteredBy: varchar("entered_by").references(() => users.id).notNull(),
-  enteredAt: timestamp("entered_at").defaultNow(),
+  score: real("score").notNull(),
+  maxScore: real("max_score").notNull().default(100),
+  enteredBy: text("entered_by").references(() => users.id).notNull(),
+  enteredAt: integer("entered_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
   comments: text("comments"),
 });
 
 // Level Progressions table
-export const levelProgressions = pgTable("level_progressions", {
-  id: serial("id").primaryKey(),
+export const levelProgressions = sqliteTable("level_progressions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
   studentId: integer("student_id").references(() => students.id).notNull(),
   fromLevelId: integer("from_level_id").references(() => levels.id),
   toLevelId: integer("to_level_id").references(() => levels.id).notNull(),
-  progressionDate: date("progression_date").notNull(),
-  completedAt: timestamp("completed_at").defaultNow(),
+  progressionDate: text("progression_date").notNull(),
+  completedAt: integer("completed_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
 });
 
 // Forums table
-export const forums = pgTable("forums", {
-  id: serial("id").primaryKey(),
-  name: varchar("name").notNull(),
+export const forums = sqliteTable("forums", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
   description: text("description"),
-  type: varchar("type").notNull(), // 'general' or 'subject'
+  type: text("type").notNull(), // 'general' or 'subject'
   subjectId: integer("subject_id").references(() => subjects.id),
-  isActive: boolean("is_active").notNull().default(true),
-  createdAt: timestamp("created_at").defaultNow(),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
 });
 
 // Forum Posts table
-export const forumPosts = pgTable("forum_posts", {
-  id: serial("id").primaryKey(),
+export const forumPosts = sqliteTable("forum_posts", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
   forumId: integer("forum_id").references(() => forums.id).notNull(),
-  authorId: varchar("author_id").references(() => users.id).notNull(),
-  title: varchar("title"),
+  authorId: text("author_id").references(() => users.id).notNull(),
+  title: text("title"),
   content: text("content").notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
 });
 
 // Relations
@@ -121,6 +176,10 @@ export const usersRelations = relations(users, ({ many }) => ({
   students: many(students),
   grades: many(grades),
   forumPosts: many(forumPosts),
+  teacher: many(teachers),
+  createdSubjects: many(subjects),
+  createdAssessments: many(assessments),
+  assessmentResults: many(assessmentResults),
 }));
 
 export const levelsRelations = relations(levels, ({ many }) => ({
@@ -139,8 +198,11 @@ export const studentsRelations = relations(students, ({ one, many }) => ({
 
 export const subjectsRelations = relations(subjects, ({ one, many }) => ({
   level: one(levels, { fields: [subjects.levelId], references: [levels.id] }),
+  createdBy: one(users, { fields: [subjects.createdById], references: [users.id] }),
   grades: many(grades),
   forums: many(forums),
+  teacherAssignments: many(teacherSubjects),
+  assessments: many(assessments),
 }));
 
 export const gradesRelations = relations(grades, ({ one }) => ({
@@ -165,6 +227,28 @@ export const forumPostsRelations = relations(forumPosts, ({ one }) => ({
   author: one(users, { fields: [forumPosts.authorId], references: [users.id] }),
 }));
 
+export const teachersRelations = relations(teachers, ({ one, many }) => ({
+  user: one(users, { fields: [teachers.userId], references: [users.id] }),
+  subjectAssignments: many(teacherSubjects),
+}));
+
+export const teacherSubjectsRelations = relations(teacherSubjects, ({ one }) => ({
+  teacher: one(teachers, { fields: [teacherSubjects.teacherId], references: [teachers.id] }),
+  subject: one(subjects, { fields: [teacherSubjects.subjectId], references: [subjects.id] }),
+}));
+
+export const assessmentsRelations = relations(assessments, ({ one, many }) => ({
+  subject: one(subjects, { fields: [assessments.subjectId], references: [subjects.id] }),
+  createdBy: one(users, { fields: [assessments.createdById], references: [users.id] }),
+  results: many(assessmentResults),
+}));
+
+export const assessmentResultsRelations = relations(assessmentResults, ({ one }) => ({
+  assessment: one(assessments, { fields: [assessmentResults.assessmentId], references: [assessments.id] }),
+  student: one(students, { fields: [assessmentResults.studentId], references: [students.id] }),
+  enteredByUser: one(users, { fields: [assessmentResults.enteredBy], references: [users.id] }),
+}));
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -175,6 +259,11 @@ export const insertUserSchema = createInsertSchema(users).omit({
 export const insertStudentSchema = createInsertSchema(students).omit({
   id: true,
   studentNumber: true,
+  createdAt: true,
+});
+
+export const insertCampusSchema = createInsertSchema(campuses).omit({
+  id: true,
   createdAt: true,
 });
 
@@ -204,6 +293,26 @@ export const insertForumPostSchema = createInsertSchema(forumPosts).omit({
   updatedAt: true,
 });
 
+export const insertTeacherSchema = createInsertSchema(teachers).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertTeacherSubjectSchema = createInsertSchema(teacherSubjects).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertAssessmentSchema = createInsertSchema(assessments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertAssessmentResultSchema = createInsertSchema(assessmentResults).omit({
+  id: true,
+  enteredAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -220,3 +329,13 @@ export type Forum = typeof forums.$inferSelect;
 export type InsertForumPost = z.infer<typeof insertForumPostSchema>;
 export type ForumPost = typeof forumPosts.$inferSelect;
 export type LevelProgression = typeof levelProgressions.$inferSelect;
+export type InsertTeacher = z.infer<typeof insertTeacherSchema>;
+export type Teacher = typeof teachers.$inferSelect;
+export type InsertTeacherSubject = z.infer<typeof insertTeacherSubjectSchema>;
+export type TeacherSubject = typeof teacherSubjects.$inferSelect;
+export type InsertAssessment = z.infer<typeof insertAssessmentSchema>;
+export type Assessment = typeof assessments.$inferSelect;
+export type InsertAssessmentResult = z.infer<typeof insertAssessmentResultSchema>;
+export type AssessmentResult = typeof assessmentResults.$inferSelect;
+export type InsertCampus = z.infer<typeof insertCampusSchema>;
+export type Campus = typeof campuses.$inferSelect;

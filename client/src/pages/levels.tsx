@@ -27,7 +27,12 @@ export default function Levels() {
       }, 500);
       return;
     }
-  }, [isAuthenticated, isLoading, toast]);
+    // Redirect students to dashboard - they shouldn't be able to manage levels
+    if (!isLoading && user && user.role === 'student') {
+      window.location.href = "/";
+      return;
+    }
+  }, [isAuthenticated, isLoading, user, toast]);
 
   const { data: levels, isLoading: levelsLoading } = useQuery({
     queryKey: ["/api/levels"],
@@ -41,7 +46,7 @@ export default function Levels() {
     queryKey: ["/api/subjects"],
   });
 
-  if (isLoading || !isAuthenticated) {
+  if (isLoading || !isAuthenticated || user?.role === 'student') {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">

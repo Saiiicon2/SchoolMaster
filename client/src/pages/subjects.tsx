@@ -29,7 +29,12 @@ export default function Subjects() {
       }, 500);
       return;
     }
-  }, [isAuthenticated, isLoading, toast]);
+    // Redirect students to dashboard - they shouldn't manage subjects
+    if (!isLoading && user && user.role === 'student') {
+      window.location.href = "/";
+      return;
+    }
+  }, [isAuthenticated, isLoading, user, toast]);
 
   const { data: subjects, isLoading: subjectsLoading } = useQuery({
     queryKey: ["/api/subjects"],
@@ -47,7 +52,7 @@ export default function Subjects() {
     selectedLevel === "all" || subject.levelId === parseInt(selectedLevel)
   ) || [];
 
-  if (isLoading || !isAuthenticated) {
+  if (isLoading || !isAuthenticated || user?.role === 'student') {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">

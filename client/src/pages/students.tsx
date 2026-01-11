@@ -12,12 +12,15 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Eye, Edit, Plus, Search } from "lucide-react";
 import AddStudentModal from "@/components/modals/add-student-modal";
+import StudentGradesModal from "@/components/modals/student-grades-modal";
 
 export default function Students() {
   const { toast } = useToast();
   const { isAuthenticated, isLoading, user } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showGradesModal, setShowGradesModal] = useState(false);
+  const [selectedStudentId, setSelectedStudentId] = useState<number | null>(null);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -31,7 +34,12 @@ export default function Students() {
       }, 500);
       return;
     }
-  }, [isAuthenticated, isLoading, toast]);
+    // Redirect students to dashboard - they shouldn't be able to manage students
+    if (!isLoading && user && user.role === 'student') {
+      window.location.href = "/";
+      return;
+    }
+  }, [isAuthenticated, isLoading, user, toast]);
 
   const { data: students, isLoading: studentsLoading } = useQuery({
     queryKey: ["/api/students"],
@@ -47,7 +55,7 @@ export default function Students() {
     student.email.toLowerCase().includes(searchTerm.toLowerCase())
   ) || [];
 
-  if (isLoading || !isAuthenticated) {
+  if (isLoading || !isAuthenticated || user?.role === 'student') {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">
@@ -82,7 +90,7 @@ export default function Students() {
                       className="pl-10 w-64"
                     />
                   </div>
-                  {user?.role === 'admin' && (
+                  {(user?.role === 'admin' || user?.role === 'teacher') && (
                     <Button 
                       onClick={() => setShowAddModal(true)}
                       className="bg-primary hover:bg-primary/90"
@@ -163,7 +171,7 @@ export default function Students() {
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
                               <div className="flex items-center space-x-2">
-                                <Button variant="ghost" size="sm">
+                                <Button variant="ghost" size="sm" onClick={() => { setSelectedStudentId(student.id); setShowGradesModal(true); }}>
                                   <Eye className="h-4 w-4 text-primary" />
                                 </Button>
                                 {user?.role === 'admin' && (
@@ -189,6 +197,11 @@ export default function Students() {
         open={showAddModal} 
         onOpenChange={setShowAddModal}
         levels={levels || []}
+      />
+      <StudentGradesModal
+        open={showGradesModal}
+        onOpenChange={(open) => { if (!open) setSelectedStudentId(null); setShowGradesModal(open); }}
+        studentId={selectedStudentId}
       />
     </div>
   );

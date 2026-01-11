@@ -7,6 +7,11 @@ import {
   forums,
   forumPosts,
   levelProgressions,
+  teachers,
+  teacherSubjects,
+  assessments,
+  assessmentResults,
+  campuses,
   type User,
   type UpsertUser,
   type Student,
@@ -22,14 +27,27 @@ import {
   type ForumPost,
   type InsertForumPost,
   type LevelProgression,
+  type Teacher,
+  type InsertTeacher,
+  type TeacherSubject,
+  type InsertTeacherSubject,
+  type Assessment,
+  type InsertAssessment,
+  type AssessmentResult,
+  type InsertAssessmentResult,
+  type Campus,
+  type InsertCampus,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql, count } from "drizzle-orm";
 
 export interface IStorage {
-  // User operations - required for Replit Auth
+  // User operations - required for external OIDC auth
   getUser(id: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
+  createUser(user: Partial<User>): Promise<User>;
+  getUserByEmail(email: string): Promise<User | undefined>;
+  getUsers(): Promise<User[]>;
   
   // Student operations
   getAllStudents(): Promise<Student[]>;
@@ -68,6 +86,27 @@ export interface IStorage {
   
   // Level progression
   progressStudent(studentId: number, toLevelId: number): Promise<LevelProgression>;
+
+  // Teacher operations
+  getAllTeachers(): Promise<Teacher[]>;
+  getTeacher(id: number): Promise<Teacher | undefined>;
+  getTeacherByUserId(userId: string): Promise<Teacher | undefined>;
+  createTeacher(teacher: InsertTeacher): Promise<Teacher>;
+  updateTeacher(id: number, teacher: Partial<InsertTeacher>): Promise<Teacher>;
+  assignTeacherToSubject(teacherId: number, subjectId: number): Promise<TeacherSubject>;
+  getTeacherSubjects(teacherId: number): Promise<TeacherSubject[]>;
+  
+  // Campus operations
+  getAllCampuses(): Promise<Campus[]>;
+  createCampus(campus: InsertCampus): Promise<Campus>;
+  
+  // Assessment operations
+  getAllAssessments(): Promise<Assessment[]>;
+  getAssessmentsBySubject(subjectId: number): Promise<Assessment[]>;
+  createAssessment(assessment: InsertAssessment): Promise<Assessment>;
+  getAssessmentResults(assessmentId: number): Promise<AssessmentResult[]>;
+  createAssessmentResult(result: InsertAssessmentResult): Promise<AssessmentResult>;
+  updateAssessmentResult(id: number, result: Partial<InsertAssessmentResult>): Promise<AssessmentResult>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -92,6 +131,30 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  async createUser(userData: Partial<User>): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values({
+        id: userData.id,
+        email: userData.email,
+        password: userData.password,
+        firstName: userData.firstName || '',
+        lastName: userData.lastName || '',
+        role: userData.role || 'student',
+      })
+      .returning();
+    return user;
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
+  }
+
+  async getUsers(): Promise<User[]> {
+    return await db.select().from(users);
+  }
+
   // Student operations
   async getAllStudents(): Promise<Student[]> {
     return await db.select().from(students).orderBy(desc(students.createdAt));
@@ -112,7 +175,15 @@ export class DatabaseStorage implements IStorage {
     const year = new Date().getFullYear();
     const countResult = await db.select({ count: count() }).from(students);
     const studentCount = countResult[0].count + 1;
-    const studentNumber = `STU-${year}-${studentCount.toString().padStart(3, '0')}`;
+    // Determine campus prefix if provided
+    let prefix = 'STU';
+    if ((student as any).campusId) {
+      const [camp] = await db.select().from(campuses).where(eq(campuses.id, (student as any).campusId));
+      if (camp) {
+        prefix = (camp.code || (camp.name || '').slice(0,4)).toString().replace(/\s+/g,'').toUpperCase();
+      }
+    }
+    const studentNumber = `${prefix}-${year}-${studentCount.toString().padStart(3, '0')}`;
 
     const [newStudent] = await db
       .insert(students)
@@ -303,6 +374,99 @@ export class DatabaseStorage implements IStorage {
     await this.updateStudent(studentId, { currentLevelId: toLevelId });
 
     return progression;
+  }
+
+  // Teacher operations
+  async getAllTeachers(): Promise<Teacher[]> {
+    return await db.select().from(teachers).where(eq(teachers.status, 'active')).orderBy(teachers.firstName);
+  }
+
+  async getTeacher(id: number): Promise<Teacher | undefined> {
+    const [teacher] = await db.select().from(teachers).where(eq(teachers.id, id));
+    return teacher;
+  }
+
+  async getTeacherByUserId(userId: string): Promise<Teacher | undefined> {
+    const [teacher] = await db.select().from(teachers).where(eq(teachers.userId, userId));
+    return teacher;
+  }
+
+  async createTeacher(teacher: InsertTeacher): Promise<Teacher> {
+    const [newTeacher] = await db.insert(teachers).values(teacher).returning();
+    return newTeacher;
+  }
+
+  async updateTeacher(id: number, teacher: Partial<InsertTeacher>): Promise<Teacher> {
+    const [updatedTeacher] = await db
+      .update(teachers)
+      .set(teacher)
+      .where(eq(teachers.id, id))
+      .returning();
+    return updatedTeacher;
+  }
+
+  async assignTeacherToSubject(teacherId: number, subjectId: number): Promise<TeacherSubject> {
+    const [assignment] = await db
+      .insert(teacherSubjects)
+      .values({
+        teacherId,
+        subjectId,
+        assignedDate: new Date().toISOString().split('T')[0],
+      })
+      .returning();
+    return assignment;
+  }
+
+  async getTeacherSubjects(teacherId: number): Promise<TeacherSubject[]> {
+    return await db.select().from(teacherSubjects).where(eq(teacherSubjects.teacherId, teacherId));
+  }
+
+  // Campus operations
+  async getAllCampuses(): Promise<Campus[]> {
+    return await db.select().from(campuses).orderBy(campuses.name);
+  }
+
+  async createCampus(campus: InsertCampus): Promise<Campus> {
+    const [newCampus] = await db.insert(campuses).values(campus).returning();
+    return newCampus;
+  }
+
+  // Assessment operations
+  async getAllAssessments(): Promise<Assessment[]> {
+    return await db.select().from(assessments).orderBy(desc(assessments.assessmentDate));
+  }
+
+  async getAssessmentsBySubject(subjectId: number): Promise<Assessment[]> {
+    return await db.select().from(assessments).where(eq(assessments.subjectId, subjectId)).orderBy(desc(assessments.assessmentDate));
+  }
+
+  async createAssessment(assessment: InsertAssessment): Promise<Assessment> {
+    try {
+      console.log('Creating assessment:', assessment);
+      const [newAssessment] = await db.insert(assessments).values(assessment).returning();
+      return newAssessment;
+    } catch (err) {
+      console.error('Error during createAssessment insert:', err);
+      throw err;
+    }
+  }
+
+  async getAssessmentResults(assessmentId: number): Promise<AssessmentResult[]> {
+    return await db.select().from(assessmentResults).where(eq(assessmentResults.assessmentId, assessmentId));
+  }
+
+  async createAssessmentResult(result: InsertAssessmentResult): Promise<AssessmentResult> {
+    const [newResult] = await db.insert(assessmentResults).values(result).returning();
+    return newResult;
+  }
+
+  async updateAssessmentResult(id: number, result: Partial<InsertAssessmentResult>): Promise<AssessmentResult> {
+    const [updatedResult] = await db
+      .update(assessmentResults)
+      .set(result)
+      .where(eq(assessmentResults.id, id))
+      .returning();
+    return updatedResult;
   }
 }
 

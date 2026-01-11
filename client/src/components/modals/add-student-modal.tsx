@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -17,6 +17,7 @@ const addStudentSchema = z.object({
   lastName: z.string().min(1, "Last name is required"),
   email: z.string().email("Please enter a valid email address"),
   currentLevelId: z.coerce.number().min(1, "Please select a level"),
+  campusId: z.coerce.number().min(1, "Please select a campus"),
   enrollmentDate: z.string().min(1, "Enrollment date is required"),
 });
 
@@ -38,6 +39,7 @@ export default function AddStudentModal({ open, onOpenChange, levels }: AddStude
       lastName: "",
       email: "",
       currentLevelId: 0,
+      campusId: 0,
       enrollmentDate: new Date().toISOString().split('T')[0],
     },
   });
@@ -75,6 +77,11 @@ export default function AddStudentModal({ open, onOpenChange, levels }: AddStude
         variant: "destructive",
       });
     },
+  });
+
+  const { data: campuses } = useQuery({
+    queryKey: ["/api/campuses"],
+    queryFn: async () => (await apiRequest("GET", "/api/campuses")).json(),
   });
 
   const onSubmit = (data: AddStudentForm) => {
@@ -147,6 +154,29 @@ export default function AddStudentModal({ open, onOpenChange, levels }: AddStude
                           <SelectItem key={level.id} value={level.id.toString()}>
                             {level.name}
                           </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="campusId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Campus</FormLabel>
+                  <FormControl>
+                    <Select onValueChange={(value) => field.onChange(parseInt(value))} value={field.value.toString()}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select campus" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(campuses || []).map((c: any) => (
+                          <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>

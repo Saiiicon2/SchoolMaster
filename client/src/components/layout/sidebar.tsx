@@ -7,14 +7,23 @@ import { GraduationCap, LayoutDashboard, Users, Layers, BookOpen, ClipboardList,
 export default function Sidebar() {
   const [location] = useLocation();
   const { user } = useAuth();
-  const [currentRole, setCurrentRole] = useState<'admin' | 'student'>(user?.role || 'student');
+  const [currentRole, setCurrentRole] = useState<'admin' | 'teacher' | 'student'>(user?.role as any || 'student');
 
   const adminNavItems = [
     { path: "/", icon: LayoutDashboard, label: "Dashboard" },
     { path: "/students", icon: Users, label: "Students" },
+    { path: "/teachers", icon: Users, label: "Teachers" },
     { path: "/levels", icon: Layers, label: "Levels" },
     { path: "/subjects", icon: BookOpen, label: "Subjects" },
-    { path: "/grades", icon: ClipboardList, label: "Grades" },
+    { path: "/grades", icon: ClipboardList, label: "Grades & Assessments" },
+    { path: "/forums", icon: MessageCircle, label: "Forums" },
+  ];
+
+  const teacherNavItems = [
+    { path: "/", icon: LayoutDashboard, label: "Dashboard" },
+    { path: "/students", icon: Users, label: "Students" },
+    { path: "/subjects", icon: BookOpen, label: "Subjects" },
+    { path: "/grades", icon: ClipboardList, label: "Grades & Assessments" },
     { path: "/forums", icon: MessageCircle, label: "Forums" },
   ];
 
@@ -25,7 +34,13 @@ export default function Sidebar() {
     { path: "/forums", icon: MessageCircle, label: "Forums" },
   ];
 
-  const navItems = currentRole === 'admin' ? adminNavItems : studentNavItems;
+  const getNavItems = () => {
+    if (currentRole === 'admin') return adminNavItems;
+    if (currentRole === 'teacher') return teacherNavItems;
+    return studentNavItems;
+  };
+
+  const navItems = getNavItems();
 
   return (
     <aside className="w-64 bg-white shadow-lg border-r border-slate-200 fixed h-full z-10">
@@ -37,27 +52,41 @@ export default function Sidebar() {
           </div>
           <div>
             <h1 className="text-lg font-bold text-slate-900">EduAdmin</h1>
-            <p className="text-xs text-slate-500">School Management</p>
+            <p className="text-xs text-slate-500">Institute Management</p>
           </div>
         </div>
       </div>
 
-      {/* Role Switcher - Only show for admin users */}
-      {user?.role === 'admin' && (
+      {/* Role Switcher - Only show for admin and teacher users */}
+      {(user?.role === 'admin' || user?.role === 'teacher') && (
         <div className="p-4 border-b border-slate-200">
-          <div className="bg-slate-100 rounded-lg p-1 flex">
+          <div className="bg-slate-100 rounded-lg p-1 flex flex-col space-y-1">
+            {user?.role === 'admin' && (
+              <button
+                className={`py-2 px-3 text-sm font-medium rounded-md transition-all ${
+                  currentRole === 'admin'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                onClick={() => setCurrentRole('admin')}
+              >
+                Admin View
+              </button>
+            )}
+            {user?.role === 'admin' && (
+              <button
+                className={`py-2 px-3 text-sm font-medium rounded-md transition-all ${
+                  currentRole === 'teacher'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                onClick={() => setCurrentRole('teacher')}
+              >
+                Teacher View
+              </button>
+            )}
             <button
-              className={`flex-1 py-2 px-3 text-sm font-medium rounded-md transition-all ${
-                currentRole === 'admin'
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-              onClick={() => setCurrentRole('admin')}
-            >
-              Admin View
-            </button>
-            <button
-              className={`flex-1 py-2 px-3 text-sm font-medium rounded-md transition-all ${
+              className={`py-2 px-3 text-sm font-medium rounded-md transition-all ${
                 currentRole === 'student'
                   ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
@@ -106,13 +135,20 @@ export default function Sidebar() {
               {user?.firstName || user?.email || 'User'}
             </p>
             <p className="text-xs text-slate-500">
-              {currentRole === 'admin' ? 'Administrator' : 'Student'}
+              {currentRole === 'admin' ? 'Administrator' : currentRole === 'teacher' ? 'Teacher' : 'Student'}
             </p>
           </div>
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => window.location.href = '/api/logout'}
+            onClick={async () => {
+              try {
+                await fetch('/api/auth/logout', { method: 'POST' });
+              } catch (err) {
+                console.error('Logout request failed', err);
+              }
+              window.location.href = '/';
+            }}
             className="text-slate-400 hover:text-slate-600"
           >
             <LogOut className="h-4 w-4" />

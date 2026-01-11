@@ -5,19 +5,21 @@ import { Button } from "@/components/ui/button";
 import { UserPlus, BookOpen, ClipboardList, BarChart3 } from "lucide-react";
 import AddStudentModal from "@/components/modals/add-student-modal";
 import AddSubjectModal from "@/components/modals/add-subject-modal";
+import AttendanceModal from "@/components/modals/attendance-modal";
 import { useQuery } from "@tanstack/react-query";
 
 export default function QuickActions() {
   const { user } = useAuth();
   const [showAddStudent, setShowAddStudent] = useState(false);
   const [showAddSubject, setShowAddSubject] = useState(false);
+  const [showAttendance, setShowAttendance] = useState(false);
 
   const { data: levels } = useQuery({
     queryKey: ["/api/levels"],
   });
 
   // Don't show quick actions for students
-  if (user?.role !== 'admin') {
+    if (user?.role !== 'admin' && user?.role !== 'teacher') {
     return null;
   }
 
@@ -35,6 +37,13 @@ export default function QuickActions() {
       iconBg: "bg-green-500/10",
       iconColor: "text-green-500",
       onClick: () => setShowAddSubject(true),
+    },
+    {
+      title: "Mark Attendance",
+      icon: UserPlus,
+      iconBg: "bg-indigo-500/10",
+      iconColor: "text-indigo-500",
+      onClick: () => setShowAttendance(true),
     },
     {
       title: "Enter Grades",
@@ -93,6 +102,7 @@ export default function QuickActions() {
         onOpenChange={setShowAddSubject}
         levels={levels || []}
       />
+      <AttendanceModal open={showAttendance} onOpenChange={setShowAttendance} />
     </>
   );
 }
