@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { sqlite } from "./db";
+import { sqlite, pg } from "./db";
 import { isAuthenticated as externalIsAuthenticated } from "./auth";
 import { setupLocalAuth, isAuthenticated as localIsAuthenticated } from "./localAuth";
 import { 
@@ -113,14 +113,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/attendance', isAuthenticated, async (req: any, res) => {
     try {
       const date = req.query.date || new Date().toISOString().split('T')[0];
-      const rows = sqlite.prepare(`
-        SELECT s.id as studentId, s.student_number as studentNumber, s.first_name as firstName, s.last_name as lastName,
-               a.status as status, a.note as note
-        FROM students s
-        LEFT JOIN attendance a ON s.id = a.student_id AND a.attendance_date = ?
-        ORDER BY s.student_number
-      `).all(date);
-      res.json(rows);
+      if (pg) {
+        const rows = await pg`
+          SELECT s.id as "studentId", s.student_number as "studentNumber", s.first_name as "firstName", s.last_name as "lastName",
+                 a.status as status, a.note as note
+          FROM students s
+          LEFT JOIN attendance a ON s.id = a.student_id AND a.attendance_date = ${date}
+          ORDER BY s.student_number
+        `;
+        res.json(rows);
+      } else {
+        const rows = sqlite.prepare(`
+          SELECT s.id as studentId, s.student_number as studentNumber, s.first_name as firstName, s.last_name as lastName,
+                 a.status as status, a.note as note
+          FROM students s
+          LEFT JOIN attendance a ON s.id = a.student_id AND a.attendance_date = ?
+          ORDER BY s.student_number
+        `).all(date);
+        res.json(rows);
+      }
     } catch (error) {
       console.error('Error fetching attendance:', error);
       res.status(500).json({ message: 'Failed to fetch attendance' });
@@ -131,23 +142,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const records = req.body.records || [];
       const now = Date.now();
-      const stmt = sqlite.prepare(`
-        INSERT INTO attendance (student_id, attendance_date, status, note, created_at)
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(student_id, attendance_date) DO UPDATE SET
-          status=excluded.status,
-          note=excluded.note,
-          created_at=excluded.created_at
-      `);
-
-      const insertMany = sqlite.transaction((items: any[]) => {
-        for (const r of items) {
-          stmt.run(r.studentId, r.attendanceDate, r.status, r.note || null, now);
+      if (pg) {
+        for (const r of records) {
+          await pg`
+            INSERT INTO attendance (student_id, attendance_date, status, note, created_at)
+            VALUES (${r.studentId}, ${r.attendanceDate}, ${r.status}, ${r.note || null}, ${now})
+            ON CONFLICT (student_id, attendance_date) DO UPDATE SET
+              status = EXCLUDED.status,
+              note = EXCLUDED.note,
+              created_at = EXCLUDED.created_at
+          `;
         }
-      });
+        res.json({ success: true });
+      } else {
+        const stmt = sqlite.prepare(`
+          INSERT INTO attendance (student_id, attendance_date, status, note, created_at)
+          VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT(student_id, attendance_date) DO UPDATE SET
+            status=excluded.status,
+            note=excluded.note,
+            created_at=excluded.created_at
+        `);
 
-      insertMany(records);
-      res.json({ success: true });
+        const insertMany = sqlite.transaction((items: any[]) => {
+          for (const r of items) {
+            stmt.run(r.studentId, r.attendanceDate, r.status, r.note || null, now);
+          }
+        });
+
+        insertMany(records);
+        res.json({ success: true });
+      }
     } catch (error) {
       console.error('Error saving attendance:', error);
       res.status(500).json({ message: 'Failed to save attendance' });

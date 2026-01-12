@@ -1,7 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import { setupLocalAuth } from "./localAuth"; // ✅ added
 import { ensureDbAndSeed } from "./db";
 
 const app = express();
@@ -11,7 +10,7 @@ app.use(express.urlencoded({ extended: false }));
 
 // Ensure DB schema and seed default users, then apply local session + auth
 await ensureDbAndSeed();
-setupLocalAuth(app);
+// Auth setup is handled inside registerRoutes based on environment
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -60,12 +59,9 @@ app.use((req, res, next) => {
     serveStatic(app);
   }
 
-  const port = 5000;
-  server.listen(
-    port,
-    "127.0.0.1",
-    () => {
-      log(`serving on port ${port}`);
-    }
-  );
+  const port = parseInt(process.env.PORT || "5000", 10);
+  const host = process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1';
+  server.listen(port, host, () => {
+    log(`serving on port ${port}`);
+  });
 })();
