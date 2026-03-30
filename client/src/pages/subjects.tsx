@@ -10,12 +10,15 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, BookOpen, Users } from "lucide-react";
 import AddSubjectModal from "@/components/modals/add-subject-modal";
+import SubjectDetailsModal from "@/components/modals/subject-details-modal";
 
 export default function Subjects() {
   const { toast } = useToast();
   const { isAuthenticated, isLoading, user } = useAuth();
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedLevel, setSelectedLevel] = useState<string>("all");
+  const [selectedSubjectId, setSelectedSubjectId] = useState<number | undefined>();
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -164,11 +167,27 @@ export default function Subjects() {
 
                       <div className="mt-4 pt-3 border-t border-slate-200">
                         <div className="flex space-x-2">
-                          <Button variant="outline" size="sm" className="flex-1">
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="flex-1"
+                            onClick={() => {
+                              setSelectedSubjectId(subject.id);
+                              setShowDetailsModal(true);
+                            }}
+                          >
                             View Details
                           </Button>
                           {user?.role === 'admin' && (
-                            <Button variant="outline" size="sm" className="flex-1">
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="flex-1"
+                              onClick={() => {
+                                setSelectedSubjectId(subject.id);
+                                setShowDetailsModal(true);
+                              }}
+                            >
                               Edit
                             </Button>
                           )}
@@ -187,6 +206,14 @@ export default function Subjects() {
         open={showAddModal} 
         onOpenChange={setShowAddModal}
         levels={levels || []}
+      />
+
+      <SubjectDetailsModal
+        open={showDetailsModal}
+        onOpenChange={setShowDetailsModal}
+        subjectId={selectedSubjectId}
+        levels={levels || []}
+        isAdmin={user?.role === 'admin'}
       />
     </div>
   );

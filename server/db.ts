@@ -100,7 +100,17 @@ export async function ensureDbAndSeed() {
 							last_name TEXT NOT NULL,
 							email TEXT NOT NULL UNIQUE,
 							employment_date TEXT NOT NULL,
+							specialties TEXT,
 							status TEXT NOT NULL DEFAULT 'active',
+							created_at INTEGER
+						);`;
+
+						await pg`CREATE TABLE IF NOT EXISTS teacher_levels (
+							id SERIAL PRIMARY KEY,
+							teacher_id INTEGER NOT NULL REFERENCES teachers(id),
+							level_id INTEGER NOT NULL REFERENCES levels(id),
+							assigned_date TEXT NOT NULL,
+							is_active BOOLEAN NOT NULL DEFAULT true,
 							created_at INTEGER
 						);`;
 
@@ -320,11 +330,22 @@ export async function ensureDbAndSeed() {
 						last_name TEXT NOT NULL,
 						email TEXT NOT NULL UNIQUE,
 						employment_date TEXT NOT NULL,
+						specialties TEXT,
 						status TEXT NOT NULL DEFAULT 'active',
 						created_at INTEGER
 					);
 				`;
 				sqlite.exec(createTeachersSQL);
+
+				// Add specialties column if it doesn't exist (migration for existing DBs)
+				try {
+					const checkColumn = sqlite.prepare("PRAGMA table_info(teachers)").all();
+					if (!checkColumn.some((col: any) => col.name === 'specialties')) {
+						sqlite.exec("ALTER TABLE teachers ADD COLUMN specialties TEXT;");
+					}
+				} catch (e) {
+					/* ignore */
+				}
 
 				const createTeacherSubjectsSQL = `
 					CREATE TABLE IF NOT EXISTS teacher_subjects (
@@ -337,6 +358,18 @@ export async function ensureDbAndSeed() {
 					);
 				`;
 				sqlite.exec(createTeacherSubjectsSQL);
+
+				const createTeacherLevelsSQL = `
+					CREATE TABLE IF NOT EXISTS teacher_levels (
+						id INTEGER PRIMARY KEY AUTOINCREMENT,
+						teacher_id INTEGER NOT NULL,
+						level_id INTEGER NOT NULL,
+						assigned_date TEXT NOT NULL,
+						is_active INTEGER NOT NULL DEFAULT 1,
+						created_at INTEGER
+					);
+				`;
+				sqlite.exec(createTeacherLevelsSQL);
 
 				const createAssessmentsSQL = `
 					CREATE TABLE IF NOT EXISTS assessments (

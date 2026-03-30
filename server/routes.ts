@@ -12,6 +12,7 @@ import {
   insertForumSchema, 
   insertForumPostSchema,
   insertTeacherSchema,
+  insertTeacherLevelSchema,
   insertAssessmentSchema,
   insertAssessmentResultSchema,
   insertCampusSchema,
@@ -261,6 +262,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get('/api/subjects/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const subject = await storage.getSubject(parseInt(req.params.id));
+      if (!subject) {
+        return res.status(404).json({ message: "Subject not found" });
+      }
+      res.json(subject);
+    } catch (error) {
+      console.error("Error fetching subject:", error);
+      res.status(500).json({ message: "Failed to fetch subject" });
+    }
+  });
+
+  app.put('/api/subjects/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(getUserId(req));
+      if (user?.role !== 'admin' && user?.role !== 'teacher') {
+        return res.status(403).json({ message: "Only admins and teachers can update subjects" });
+      }
+
+      const validatedData = insertSubjectSchema.parse(req.body);
+      const subject = await storage.updateSubject(parseInt(req.params.id), validatedData);
+      res.json(subject);
+    } catch (error) {
+      console.error("Error updating subject:", error);
+      res.status(500).json({ message: "Failed to update subject" });
+    }
+  });
+
   // Campus routes
   app.get('/api/campuses', isAuthenticated, async (req: any, res) => {
     try {
@@ -460,6 +490,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error assigning subject to teacher:", error);
       res.status(500).json({ message: "Failed to assign subject to teacher" });
+    }
+  });
+
+  app.put('/api/teachers/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(getUserId(req));
+      if (user?.role !== 'admin') {
+        return res.status(403).json({ message: "Only admins can update teachers" });
+      }
+
+      const validatedData = insertTeacherSchema.parse(req.body);
+      const teacher = await storage.updateTeacher(parseInt(req.params.id), validatedData);
+      res.json(teacher);
+    } catch (error) {
+      console.error("Error updating teacher:", error);
+      res.status(500).json({ message: "Failed to update teacher" });
+    }
+  });
+
+  app.delete('/api/teachers/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(getUserId(req));
+      if (user?.role !== 'admin') {
+        return res.status(403).json({ message: "Only admins can delete teachers" });
+      }
+
+      await storage.deleteTeacher(parseInt(req.params.id));
+      res.json({ message: "Teacher deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting teacher:", error);
+      res.status(500).json({ message: "Failed to delete teacher" });
+    }
+  });
+
+  app.get('/api/teachers/:id/levels', isAuthenticated, async (req: any, res) => {
+    try {
+      const levels = await storage.getTeacherLevels(parseInt(req.params.id));
+      res.json(levels);
+    } catch (error) {
+      console.error("Error fetching teacher levels:", error);
+      res.status(500).json({ message: "Failed to fetch teacher levels" });
+    }
+  });
+
+  app.post('/api/teachers/:id/levels', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(getUserId(req));
+      if (user?.role !== 'admin') {
+        return res.status(403).json({ message: "Only admins can assign levels to teachers" });
+      }
+
+      const { levelId } = req.body;
+      const assignment = await storage.assignTeacherToLevel(parseInt(req.params.id), levelId);
+      res.status(201).json(assignment);
+    } catch (error) {
+      console.error("Error assigning level to teacher:", error);
+      res.status(500).json({ message: "Failed to assign level to teacher" });
+    }
+  });
+
+  app.delete('/api/teachers/:id/levels/:levelId', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(getUserId(req));
+      if (user?.role !== 'admin') {
+        return res.status(403).json({ message: "Only admins can remove level assignments" });
+      }
+
+      await storage.removeTeacherFromLevel(parseInt(req.params.id), parseInt(req.params.levelId));
+      res.json({ message: "Teacher removed from level successfully" });
+    } catch (error) {
+      console.error("Error removing teacher from level:", error);
+      res.status(500).json({ message: "Failed to remove teacher from level" });
     }
   });
 

@@ -9,6 +9,7 @@ import {
   levelProgressions,
   teachers,
   teacherSubjects,
+  teacherLevels,
   assessments,
   assessmentResults,
   campuses,
@@ -31,6 +32,8 @@ import {
   type InsertTeacher,
   type TeacherSubject,
   type InsertTeacherSubject,
+  type TeacherLevel,
+  type InsertTeacherLevel,
   type Assessment,
   type InsertAssessment,
   type AssessmentResult,
@@ -64,6 +67,7 @@ export interface IStorage {
   
   // Subject operations
   getAllSubjects(): Promise<Subject[]>;
+  getSubject(id: number): Promise<Subject | undefined>;
   getSubjectsByLevel(levelId: number): Promise<Subject[]>;
   createSubject(subject: InsertSubject): Promise<Subject>;
   updateSubject(id: number, subject: Partial<InsertSubject>): Promise<Subject>;
@@ -93,8 +97,12 @@ export interface IStorage {
   getTeacherByUserId(userId: string): Promise<Teacher | undefined>;
   createTeacher(teacher: InsertTeacher): Promise<Teacher>;
   updateTeacher(id: number, teacher: Partial<InsertTeacher>): Promise<Teacher>;
+  deleteTeacher(id: number): Promise<void>;
   assignTeacherToSubject(teacherId: number, subjectId: number): Promise<TeacherSubject>;
   getTeacherSubjects(teacherId: number): Promise<TeacherSubject[]>;
+  assignTeacherToLevel(teacherId: number, levelId: number): Promise<TeacherLevel>;
+  removeTeacherFromLevel(teacherId: number, levelId: number): Promise<void>;
+  getTeacherLevels(teacherId: number): Promise<TeacherLevel[]>;
   
   // Campus operations
   getAllCampuses(): Promise<Campus[]>;
@@ -228,6 +236,11 @@ export class DatabaseStorage implements IStorage {
   // Subject operations
   async getAllSubjects(): Promise<Subject[]> {
     return await db.select().from(subjects).orderBy(subjects.name);
+  }
+
+  async getSubject(id: number): Promise<Subject | undefined> {
+    const [subject] = await db.select().from(subjects).where(eq(subjects.id, id));
+    return subject;
   }
 
   async getSubjectsByLevel(levelId: number): Promise<Subject[]> {
@@ -405,6 +418,15 @@ export class DatabaseStorage implements IStorage {
     return updatedTeacher;
   }
 
+  async deleteTeacher(id: number): Promise<void> {
+    // Delete teacher level assignments
+    await db.delete(teacherLevels).where(eq(teacherLevels.teacherId, id));
+    // Delete teacher subject assignments
+    await db.delete(teacherSubjects).where(eq(teacherSubjects.teacherId, id));
+    // Delete teacher
+    await db.delete(teachers).where(eq(teachers.id, id));
+  }
+
   async assignTeacherToSubject(teacherId: number, subjectId: number): Promise<TeacherSubject> {
     const [assignment] = await db
       .insert(teacherSubjects)
@@ -419,6 +441,33 @@ export class DatabaseStorage implements IStorage {
 
   async getTeacherSubjects(teacherId: number): Promise<TeacherSubject[]> {
     return await db.select().from(teacherSubjects).where(eq(teacherSubjects.teacherId, teacherId));
+  }
+
+  async assignTeacherToLevel(teacherId: number, levelId: number): Promise<TeacherLevel> {
+    const [assignment] = await db
+      .insert(teacherLevels)
+      .values({
+        teacherId,
+        levelId,
+        assignedDate: new Date().toISOString().split('T')[0],
+      })
+      .returning();
+    return assignment;
+  }
+
+  async removeTeacherFromLevel(teacherId: number, levelId: number): Promise<void> {
+    await db
+      .delete(teacherLevels)
+      .where(
+        and(
+          eq(teacherLevels.teacherId, teacherId),
+          eq(teacherLevels.levelId, levelId)
+        )
+      );
+  }
+
+  async getTeacherLevels(teacherId: number): Promise<TeacherLevel[]> {
+    return await db.select().from(teacherLevels).where(eq(teacherLevels.teacherId, teacherId));
   }
 
   // Campus operations

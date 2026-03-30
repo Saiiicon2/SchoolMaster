@@ -10,12 +10,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Badge } from "@/components/ui/badge";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Plus, Users } from "lucide-react";
+import { Plus, Users, Edit, Eye } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
+import TeacherDetailsModal from "@/components/modals/teacher-details-modal";
 
 const addTeacherSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -31,6 +33,8 @@ export default function Teachers() {
   const { toast } = useToast();
   const { user, isLoading, isAuthenticated } = useAuth();
   const [open, setOpen] = useState(false);
+  const [selectedTeacherId, setSelectedTeacherId] = useState<number | undefined>();
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
 
   // Check authorization
   useEffect(() => {
@@ -53,6 +57,10 @@ export default function Teachers() {
       const response = await apiRequest("GET", "/api/teachers");
       return await response.json();
     },
+  });
+
+  const { data: levels = [] } = useQuery({
+    queryKey: ["/api/levels"],
   });
 
   const form = useForm<AddTeacherForm>({
@@ -224,10 +232,10 @@ export default function Teachers() {
           ) : (
             <div className="grid gap-4">
               {teachers.map((teacher: any) => (
-                <Card key={teacher.id}>
+                <Card key={teacher.id} className="border border-slate-200">
                   <CardHeader>
                     <div className="flex justify-between items-start">
-                      <div>
+                      <div className="flex-1">
                         <CardTitle className="text-lg">
                           {teacher.firstName} {teacher.lastName}
                         </CardTitle>
@@ -240,14 +248,30 @@ export default function Teachers() {
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="flex gap-2">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        teacher.status === 'active' 
-                          ? 'bg-green-100 text-green-700' 
-                          : 'bg-red-100 text-red-700'
-                      }`}>
-                        {teacher.status === 'active' ? 'Active' : 'Inactive'}
-                      </span>
+                    <div className="flex items-center justify-between">
+                      <div className="flex gap-2 items-center">
+                        <Badge variant={teacher.status === 'active' ? 'default' : 'secondary'}>
+                          {teacher.status === 'active' ? 'Active' : 'Inactive'}
+                        </Badge>
+                        {teacher.specialties && (
+                          <Badge variant="outline">
+                            {teacher.specialties.split(",").length} specialt{teacher.specialties.split(",").length !== 1 ? 'ies' : 'y'}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedTeacherId(teacher.id);
+                            setShowDetailsModal(true);
+                          }}
+                        >
+                          <Eye className="h-4 w-4 mr-1" />
+                          View
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -256,6 +280,14 @@ export default function Teachers() {
           )}
         </div>
       </main>
+
+      <TeacherDetailsModal
+        open={showDetailsModal}
+        onOpenChange={setShowDetailsModal}
+        teacherId={selectedTeacherId}
+        isAdmin={user?.role === 'admin'}
+        levels={levels}
+      />
     </div>
   );
 }

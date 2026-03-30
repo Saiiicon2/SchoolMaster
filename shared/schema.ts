@@ -89,6 +89,7 @@ export const teachers = sqliteTable("teachers", {
   lastName: text("last_name").notNull(),
   email: text("email").notNull().unique(),
   employmentDate: text("employment_date").notNull(),
+  specialties: text("specialties"), // optional: comma-separated specialties
   status: text("status").notNull().default("active"), // 'active', 'inactive'
   createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
 });
@@ -98,6 +99,16 @@ export const teacherSubjects = sqliteTable("teacher_subjects", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   teacherId: integer("teacher_id").references(() => teachers.id).notNull(),
   subjectId: integer("subject_id").references(() => subjects.id).notNull(),
+  assignedDate: text("assigned_date").notNull(),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
+});
+
+// Teacher Level Assignment table (teachers can teach at multiple levels)
+export const teacherLevels = sqliteTable("teacher_levels", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  teacherId: integer("teacher_id").references(() => teachers.id).notNull(),
+  levelId: integer("level_id").references(() => levels.id).notNull(),
   assignedDate: text("assigned_date").notNull(),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
   createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
@@ -230,11 +241,17 @@ export const forumPostsRelations = relations(forumPosts, ({ one }) => ({
 export const teachersRelations = relations(teachers, ({ one, many }) => ({
   user: one(users, { fields: [teachers.userId], references: [users.id] }),
   subjectAssignments: many(teacherSubjects),
+  levelAssignments: many(teacherLevels),
 }));
 
 export const teacherSubjectsRelations = relations(teacherSubjects, ({ one }) => ({
   teacher: one(teachers, { fields: [teacherSubjects.teacherId], references: [teachers.id] }),
   subject: one(subjects, { fields: [teacherSubjects.subjectId], references: [subjects.id] }),
+}));
+
+export const teacherLevelsRelations = relations(teacherLevels, ({ one }) => ({
+  teacher: one(teachers, { fields: [teacherLevels.teacherId], references: [teachers.id] }),
+  level: one(levels, { fields: [teacherLevels.levelId], references: [levels.id] }),
 }));
 
 export const assessmentsRelations = relations(assessments, ({ one, many }) => ({
@@ -303,6 +320,11 @@ export const insertTeacherSubjectSchema = createInsertSchema(teacherSubjects).om
   createdAt: true,
 });
 
+export const insertTeacherLevelSchema = createInsertSchema(teacherLevels).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertAssessmentSchema = createInsertSchema(assessments).omit({
   id: true,
   createdAt: true,
@@ -333,6 +355,8 @@ export type InsertTeacher = z.infer<typeof insertTeacherSchema>;
 export type Teacher = typeof teachers.$inferSelect;
 export type InsertTeacherSubject = z.infer<typeof insertTeacherSubjectSchema>;
 export type TeacherSubject = typeof teacherSubjects.$inferSelect;
+export type InsertTeacherLevel = z.infer<typeof insertTeacherLevelSchema>;
+export type TeacherLevel = typeof teacherLevels.$inferSelect;
 export type InsertAssessment = z.infer<typeof insertAssessmentSchema>;
 export type Assessment = typeof assessments.$inferSelect;
 export type InsertAssessmentResult = z.infer<typeof insertAssessmentResultSchema>;
