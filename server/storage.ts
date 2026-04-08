@@ -42,7 +42,7 @@ import {
   type InsertCampus,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, sql, count } from "drizzle-orm";
+import { eq, desc, and, or, sql, count, inArray } from "drizzle-orm";
 
 export interface IStorage {
   // User operations - required for external OIDC auth
@@ -62,8 +62,10 @@ export interface IStorage {
   // Level operations
   getAllLevels(): Promise<Level[]>;
   getLevel(id: number): Promise<Level | undefined>;
+  getStudentsByLevel(levelId: number): Promise<Student[]>;
   createLevel(level: InsertLevel): Promise<Level>;
   updateLevel(id: number, level: Partial<InsertLevel>): Promise<Level>;
+  deleteLevel(id: number): Promise<void>;
   
   // Subject operations
   getAllSubjects(): Promise<Subject[]>;
@@ -113,8 +115,10 @@ export interface IStorage {
   getAssessmentsBySubject(subjectId: number): Promise<Assessment[]>;
   createAssessment(assessment: InsertAssessment): Promise<Assessment>;
   getAssessmentResults(assessmentId: number): Promise<AssessmentResult[]>;
+  getAssessmentResultsBySubject(subjectId: number): Promise<AssessmentResult[]>;
   createAssessmentResult(result: InsertAssessmentResult): Promise<AssessmentResult>;
   updateAssessmentResult(id: number, result: Partial<InsertAssessmentResult>): Promise<AssessmentResult>;
+  upsertAssessmentResult(assessmentId: number, studentId: number, score: number, enteredBy: string): Promise<AssessmentResult>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -219,6 +223,10 @@ export class DatabaseStorage implements IStorage {
     return level;
   }
 
+  async getStudentsByLevel(levelId: number): Promise<Student[]> {
+    return await db.select().from(students).where(eq(students.currentLevelId, levelId));
+  }
+
   async createLevel(level: InsertLevel): Promise<Level> {
     const [newLevel] = await db.insert(levels).values(level).returning();
     return newLevel;
@@ -231,6 +239,15 @@ export class DatabaseStorage implements IStorage {
       .where(eq(levels.id, id))
       .returning();
     return updatedLevel;
+  }
+
+  async deleteLevel(id: number): Promise<void> {
+    // Remove association records before deleting the level.
+    await db.delete(teacherLevels).where(eq(teacherLevels.levelId, id));
+    await db
+      .delete(levelProgressions)
+      .where(or(eq(levelProgressions.fromLevelId, id), eq(levelProgressions.toLevelId, id)));
+    await db.delete(levels).where(eq(levels.id, id));
   }
 
   // Subject operations
@@ -516,6 +533,49 @@ export class DatabaseStorage implements IStorage {
       .where(eq(assessmentResults.id, id))
       .returning();
     return updatedResult;
+  }
+
+  async getAssessmentResultsBySubject(subjectId: number): Promise<AssessmentResult[]> {
+    const subjectAssessments = await db
+      .select({ id: assessments.id })
+      .from(assessments)
+      .where(eq(assessments.subjectId, subjectId));
+    if (subjectAssessments.length === 0) return [];
+    const assessmentIds = subjectAssessments.map((a) => a.id);
+    return await db
+      .select()
+      .from(assessmentResults)
+      .where(inArray(assessmentResults.assessmentId, assessmentIds));
+  }
+
+  async upsertAssessmentResult(
+    assessmentId: number,
+    studentId: number,
+    score: number,
+    enteredBy: string
+  ): Promise<AssessmentResult> {
+    const existing = await db
+      .select()
+      .from(assessmentResults)
+      .where(
+        and(
+          eq(assessmentResults.assessmentId, assessmentId),
+          eq(assessmentResults.studentId, studentId)
+        )
+      );
+    if (existing.length > 0) {
+      const [updated] = await db
+        .update(assessmentResults)
+        .set({ score, enteredBy })
+        .where(eq(assessmentResults.id, existing[0].id))
+        .returning();
+      return updated;
+    }
+    const [created] = await db
+      .insert(assessmentResults)
+      .values({ assessmentId, studentId, score, enteredBy })
+      .returning();
+    return created;
   }
 }
 

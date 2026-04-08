@@ -5,7 +5,11 @@ import { Badge } from "@/components/ui/badge";
 import { Eye, Edit, Plus, Download } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
-export default function RecentStudents() {
+interface RecentStudentsProps {
+  searchTerm?: string;
+}
+
+export default function RecentStudents({ searchTerm = "" }: RecentStudentsProps) {
   const { user } = useAuth();
   const { data: students, isLoading } = useQuery({
     queryKey: ["/api/students"],
@@ -34,8 +38,18 @@ export default function RecentStudents() {
     );
   }
 
-  // Get the most recent students (last 5)
-  const recentStudents = students?.slice(0, 5) || [];
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+
+  // Apply search across all students, then show the most recent matching rows.
+  const recentStudents = (students || []).filter((student: any) => {
+    if (!normalizedSearch) return true;
+    const fullName = `${student.firstName} ${student.lastName}`.toLowerCase();
+    return (
+      fullName.includes(normalizedSearch) ||
+      student.email?.toLowerCase().includes(normalizedSearch) ||
+      student.studentNumber?.toLowerCase().includes(normalizedSearch)
+    );
+  }).slice(0, 5);
 
   return (
     <Card className="bg-white rounded-xl shadow-sm border border-slate-200">
@@ -64,7 +78,9 @@ export default function RecentStudents() {
       <CardContent className="p-0">
         {recentStudents.length === 0 ? (
           <div className="text-center py-8">
-            <p className="text-slate-500">No students found.</p>
+            <p className="text-slate-500">
+              {normalizedSearch ? "No students match your search." : "No students found."}
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">

@@ -8,6 +8,7 @@ import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
 import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
+import TeacherDashboard from "@/pages/teacher-dashboard";
 import Students from "@/pages/students";
 import Teachers from "@/pages/teachers";
 import Levels from "@/pages/levels";
@@ -16,7 +17,8 @@ import Grades from "@/pages/grades";
 import Forums from "@/pages/forums";
 
 function Router() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
+  const authUser = user as { role?: string } | undefined;
 
   return (
     <Switch>
@@ -24,6 +26,14 @@ function Router() {
         <>
           <Route path="/" component={Landing} />
           <Route path="/login" component={Login} />
+        </>
+      ) : authUser?.role === "teacher" ? (
+        <>
+          <Route path="/" component={TeacherDashboard} />
+          <Route path="/teacher" component={TeacherDashboard} />
+          <Route path="/subjects" component={Subjects} />
+          <Route path="/grades" component={Grades} />
+          <Route path="/forums" component={Forums} />
         </>
       ) : (
         <>

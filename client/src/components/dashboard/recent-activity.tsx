@@ -3,9 +3,23 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { UserPlus, ClipboardCheck, MessageCircle, TrendingUp } from "lucide-react";
 
-export default function RecentActivity() {
+interface RecentActivityProps {
+  searchTerm?: string;
+}
+
+export default function RecentActivity({ searchTerm = "" }: RecentActivityProps) {
   const { data: activities, isLoading } = useQuery({
     queryKey: ["/api/dashboard/activity"],
+  });
+
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const filteredActivities = (activities || []).filter((activity: any) => {
+    if (!normalizedSearch) return true;
+    return (
+      activity.studentName?.toLowerCase().includes(normalizedSearch) ||
+      activity.subjectName?.toLowerCase().includes(normalizedSearch) ||
+      activity.levelName?.toLowerCase().includes(normalizedSearch)
+    );
   });
 
   if (isLoading) {
@@ -87,13 +101,15 @@ export default function RecentActivity() {
         </div>
       </CardHeader>
       <CardContent>
-        {!activities || activities.length === 0 ? (
+        {filteredActivities.length === 0 ? (
           <div className="text-center py-8">
-            <p className="text-slate-500">No recent activity found.</p>
+            <p className="text-slate-500">
+              {normalizedSearch ? "No activity matches your student search." : "No recent activity found."}
+            </p>
           </div>
         ) : (
           <div className="space-y-4">
-            {activities.slice(0, 5).map((activity: any, index: number) => {
+            {filteredActivities.slice(0, 5).map((activity: any, index: number) => {
               const { Icon, color, bg } = getActivityIcon(activity.type);
               const formattedActivity = formatActivity(activity);
               

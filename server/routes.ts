@@ -81,6 +81,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get('/api/students/level/:levelId', isAuthenticated, async (req: any, res) => {
+    try {
+      const levelId = parseInt(req.params.levelId);
+      if (isNaN(levelId)) return res.status(400).json({ message: "Invalid level id" });
+      const students = await storage.getStudentsByLevel(levelId);
+      res.json(students);
+    } catch (error) {
+      console.error("Error fetching students by level:", error);
+      res.status(500).json({ message: "Failed to fetch students by level" });
+    }
+  });
+
   app.get('/api/students/:id', isAuthenticated, async (req: any, res) => {
     try {
       const student = await storage.getStudent(parseInt(req.params.id));
@@ -219,6 +231,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error creating level:", error);
       res.status(500).json({ message: "Failed to create level" });
+    }
+  });
+
+  app.put('/api/levels/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(getUserId(req));
+      if (user?.role !== 'admin' && user?.role !== 'teacher') {
+        return res.status(403).json({ message: "Only admins and teachers can update levels" });
+      }
+
+      const validatedData = insertLevelSchema.parse(req.body);
+      const level = await storage.updateLevel(parseInt(req.params.id), validatedData);
+      res.json(level);
+    } catch (error) {
+      console.error("Error updating level:", error);
+      res.status(500).json({ message: "Failed to update level" });
+    }
+  });
+
+  app.delete('/api/levels/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(getUserId(req));
+      if (user?.role !== 'admin') {
+        return res.status(403).json({ message: "Only admins can delete levels" });
+      }
+
+      const levelId = parseInt(req.params.id);
+        if (Number.isNaN(levelId)) {
+          return res.status(400).json({ message: "Invalid level id" });
+        }
+
+      const level = await storage.getLevel(levelId);
+      if (!level) {
+        return res.status(404).json({ message: "Level not found" });
+      }
+
+      const [studentsInLevel, subjectsInLevel] = await Promise.all([
+        storage.getStudentsByLevel(levelId),
+        storage.getSubjectsByLevel(levelId),
+      ]);
+
+      if (studentsInLevel.length > 0 || subjectsInLevel.length > 0) {
+          if (!level.isActive) {
+            return res.status(400).json({
+              message: `Level cannot be permanently deleted while it still has linked records (${studentsInLevel.length} students, ${subjectsInLevel.length} subjects). Remove or reassign them first.`,
+            });
+          }
+
+          await storage.updateLevel(levelId, { isActive: false });
+          return res.json({
+            message: `Level archived because it still has linked records (${studentsInLevel.length} students, ${subjectsInLevel.length} subjects).`,
+            action: "archived",
+          });
+      }
+
+      await storage.deleteLevel(levelId);
+        res.json({ message: "Level deleted successfully", action: "deleted" });
+    } catch (error) {
+      console.error("Error deleting level:", error);
+      res.status(500).json({ message: "Failed to delete level" });
     }
   });
 
@@ -646,6 +718,114 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error updating assessment result:", error);
       res.status(500).json({ message: "Failed to update assessment result" });
+    }
+  });
+
+  // Bulk upsert assessment results (for teacher mark register save)
+  app.post('/api/assessment-results/bulk', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(getUserId(req));
+      if (user?.role !== 'admin' && user?.role !== 'teacher') {
+        return res.status(403).json({ message: "Only admins and teachers can enter assessment results" });
+      }
+      const { entries } = req.body; // [{ assessmentId, studentId, score }]
+      if (!Array.isArray(entries)) {
+        return res.status(400).json({ message: "entries must be an array" });
+      }
+      const userId = getUserId(req);
+      const saved = await Promise.all(
+        entries.map((e: any) =>
+          storage.upsertAssessmentResult(e.assessmentId, e.studentId, e.score, userId)
+        )
+      );
+      res.json(saved);
+    } catch (error) {
+      console.error("Error bulk saving assessment results:", error);
+      res.status(500).json({ message: "Failed to save assessment results" });
+    }
+  });
+
+  // Get all assessment results for a subject (for teacher register sheet)
+  app.get('/api/assessment-results/subject/:subjectId', isAuthenticated, async (req: any, res) => {
+    try {
+      const results = await storage.getAssessmentResultsBySubject(parseInt(req.params.subjectId));
+      res.json(results);
+    } catch (error) {
+      console.error("Error fetching assessment results by subject:", error);
+      res.status(500).json({ message: "Failed to fetch assessment results" });
+    }
+  });
+
+  // Teacher profile (current logged-in teacher)
+  app.get('/api/teacher/profile', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = getUserId(req);
+      const teacher = await storage.getTeacherByUserId(userId);
+      if (!teacher) {
+        return res.status(404).json({ message: "Teacher profile not found" });
+      }
+      res.json(teacher);
+    } catch (error) {
+      console.error("Error fetching teacher profile:", error);
+      res.status(500).json({ message: "Failed to fetch teacher profile" });
+    }
+  });
+
+  // Levels assigned to the current logged-in teacher (with subjects per level)
+  app.get('/api/teacher/my-levels', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = getUserId(req);
+      const teacher = await storage.getTeacherByUserId(userId);
+      if (!teacher) {
+        return res.status(404).json({ message: "Teacher profile not found" });
+      }
+      const teacherLevelRows = await storage.getTeacherLevels(teacher.id);
+      const levelIds = teacherLevelRows.map((tl) => tl.levelId);
+      const allLevels = await storage.getAllLevels();
+      const myLevels = allLevels.filter((l) => levelIds.includes(l.id));
+      // Attach subjects for each level
+      const result = await Promise.all(
+        myLevels.map(async (level) => {
+          const levelSubjects = await storage.getSubjectsByLevel(level.id);
+          return { ...level, subjects: levelSubjects };
+        })
+      );
+      res.json(result);
+    } catch (error) {
+      console.error("Error fetching teacher levels:", error);
+      res.status(500).json({ message: "Failed to fetch teacher levels" });
+    }
+  });
+
+  // Attendance filtered by optional levelId (for teacher dashboard)
+  app.get('/api/attendance/level/:levelId', isAuthenticated, async (req: any, res) => {
+    try {
+      const date = (req.query.date as string) || new Date().toISOString().split('T')[0];
+      const levelId = parseInt(req.params.levelId);
+      if (sqlite) {
+        const rows = sqlite.prepare(`
+          SELECT s.id as studentId, s.student_number as studentNumber, s.first_name as firstName, s.last_name as lastName,
+                 a.status as status, a.note as note
+          FROM students s
+          LEFT JOIN attendance a ON s.id = a.student_id AND a.attendance_date = ?
+          WHERE s.current_level_id = ?
+          ORDER BY s.last_name, s.first_name
+        `).all(date, levelId);
+        res.json(rows);
+      } else if (pg) {
+        const rows = await pg`
+          SELECT s.id as "studentId", s.student_number as "studentNumber", s.first_name as "firstName", s.last_name as "lastName",
+                 a.status as status, a.note as note
+          FROM students s
+          LEFT JOIN attendance a ON s.id = a.student_id AND a.attendance_date = ${date}
+          WHERE s.current_level_id = ${levelId}
+          ORDER BY s.last_name, s.first_name
+        `;
+        res.json(rows);
+      }
+    } catch (error) {
+      console.error('Error fetching level attendance:', error);
+      res.status(500).json({ message: 'Failed to fetch attendance' });
     }
   });
 

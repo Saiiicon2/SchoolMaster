@@ -23,7 +23,7 @@ const addTeacherSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
   email: z.string().email("Valid email required"),
-  userId: z.string().min(1, "User ID is required"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
   employmentDate: z.string().min(1, "Employment date is required"),
 });
 
@@ -69,14 +69,18 @@ export default function Teachers() {
       firstName: "",
       lastName: "",
       email: "",
-      userId: "",
+      password: "",
       employmentDate: new Date().toISOString().split('T')[0],
     },
   });
 
   const createTeacherMutation = useMutation({
     mutationFn: async (data: AddTeacherForm) => {
-      await apiRequest("POST", "/api/teachers", data);
+      const r = await apiRequest("POST", "/api/auth/register-teacher", data);
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ message: "Failed to add teacher" }));
+        throw new Error(err.message);
+      }
     },
     onSuccess: () => {
       toast({
@@ -87,14 +91,14 @@ export default function Teachers() {
       form.reset();
       setOpen(false);
     },
-    onError: (error) => {
+    onError: (error: any) => {
       if (isUnauthorizedError(error)) {
         window.location.href = "/api/login";
         return;
       }
       toast({
         title: "Error",
-        description: "Failed to add teacher",
+        description: error?.message || "Failed to add teacher",
         variant: "destructive",
       });
     },
@@ -179,12 +183,12 @@ export default function Teachers() {
                     />
                     <FormField
                       control={form.control}
-                      name="userId"
+                      name="password"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>User ID (Auth Provider ID)</FormLabel>
+                          <FormLabel>Login Password</FormLabel>
                           <FormControl>
-                            <Input placeholder="user_id_from_auth" {...field} />
+                            <Input type="password" placeholder="Min. 6 characters" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import Sidebar from "@/components/layout/sidebar";
@@ -7,13 +7,22 @@ import TopBar from "@/components/layout/topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Users, BookOpen, Clock } from "lucide-react";
+import { Plus, Users, BookOpen, Clock, GripVertical, Pencil, Trash2 } from "lucide-react";
 import AddLevelModal from "@/components/modals/add-level-modal";
+import EditLevelModal from "@/components/modals/edit-level-modal";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { isUnauthorizedError } from "@/lib/authUtils";
+
+const LEVELS_ORDER_STORAGE_KEY = "schoolmaster.levels.tile-order";
 
 export default function Levels() {
   const { toast } = useToast();
   const { isAuthenticated, isLoading, user } = useAuth();
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingLevel, setEditingLevel] = useState<any | null>(null);
+  const [orderedLevels, setOrderedLevels] = useState<any[]>([]);
+  const [draggedLevelId, setDraggedLevelId] = useState<number | null>(null);
+  const [dragOverLevelId, setDragOverLevelId] = useState<number | null>(null);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -45,6 +54,125 @@ export default function Levels() {
   const { data: subjects } = useQuery({
     queryKey: ["/api/subjects"],
   });
+
+  useEffect(() => {
+    const levelList = Array.isArray(levels) ? levels : [];
+    if (levelList.length === 0) {
+      setOrderedLevels([]);
+      return;
+    }
+
+    if (typeof window === "undefined") {
+      setOrderedLevels(levelList);
+      return;
+    }
+
+    const savedRaw = window.localStorage.getItem(LEVELS_ORDER_STORAGE_KEY);
+    if (!savedRaw) {
+      setOrderedLevels(levelList);
+      return;
+    }
+
+    try {
+      const savedIds: number[] = JSON.parse(savedRaw);
+      const levelById = new Map(levelList.map((level: any) => [level.id, level]));
+      const ordered = savedIds
+        .map((id) => levelById.get(id))
+        .filter((level): level is any => Boolean(level));
+      const unordered = levelList.filter(
+        (level: any) => !savedIds.includes(level.id),
+      );
+      setOrderedLevels([...ordered, ...unordered]);
+    } catch {
+      setOrderedLevels(levelList);
+    }
+  }, [levels]);
+
+  function persistLevelOrder(levelList: any[]) {
+    if (typeof window === "undefined") return;
+    const ids = levelList.map((level: any) => level.id);
+    window.localStorage.setItem(LEVELS_ORDER_STORAGE_KEY, JSON.stringify(ids));
+  }
+
+  function moveLevel(draggedId: number, targetId: number) {
+    if (draggedId === targetId) return;
+
+    setOrderedLevels((prev) => {
+      const next = [...prev];
+      const from = next.findIndex((level: any) => level.id === draggedId);
+      const to = next.findIndex((level: any) => level.id === targetId);
+      if (from < 0 || to < 0) return prev;
+
+      const [dragged] = next.splice(from, 1);
+      next.splice(to, 0, dragged);
+      persistLevelOrder(next);
+      return next;
+    });
+  }
+
+  const displayedLevels = orderedLevels.length > 0
+    ? orderedLevels
+    : (Array.isArray(levels) ? levels : []);
+
+  function getErrorMessage(error: unknown, fallback: string) {
+    if (!(error instanceof Error)) return fallback;
+    const responseText = error.message.split(": ").slice(1).join(": ");
+    if (!responseText) return fallback;
+
+    try {
+      const parsed = JSON.parse(responseText);
+      return parsed?.message || fallback;
+    } catch {
+      return responseText;
+    }
+  }
+
+  const deleteLevelMutation = useMutation({
+    mutationFn: async (levelId: number) => {
+      const response = await apiRequest("DELETE", `/api/levels/${levelId}`);
+      return response.json() as Promise<{ message?: string; action?: "deleted" | "archived" }>;
+    },
+    onSuccess: (result) => {
+      toast({
+        title: result?.action === "archived" ? "Archived" : "Deleted",
+        description: result?.message || "Level deleted successfully",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/levels"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+    },
+    onError: (error) => {
+      if (isUnauthorizedError(error)) {
+        toast({
+          title: "Unauthorized",
+          description: "You are logged out. Logging in again...",
+          variant: "destructive",
+        });
+        setTimeout(() => {
+          window.location.href = "/api/login";
+        }, 500);
+        return;
+      }
+
+      toast({
+        title: "Delete failed",
+        description: getErrorMessage(error, "Failed to delete level."),
+        variant: "destructive",
+      });
+    },
+  });
+
+  function handleDeleteLevel(level: any) {
+    const levelStudents = students?.filter((s: any) => s.currentLevelId === level.id) || [];
+    const levelSubjects = subjects?.filter((s: any) => s.levelId === level.id) || [];
+    const willArchive = levelStudents.length > 0 || levelSubjects.length > 0;
+    const confirmed = window.confirm(
+      willArchive
+        ? `Delete ${level.name}? It still has ${levelStudents.length} student(s) and ${levelSubjects.length} subject(s), so it will be archived instead of permanently deleted.`
+        : `Delete ${level.name}? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+    deleteLevelMutation.mutate(level.id);
+  }
 
   if (isLoading || !isAuthenticated || user?.role === 'student') {
     return (
@@ -96,15 +224,42 @@ export default function Levels() {
             </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {levels?.map((level: any) => {
+              {displayedLevels.map((level: any) => {
                 const levelStudents = students?.filter((s: any) => s.currentLevelId === level.id) || [];
                 const levelSubjects = subjects?.filter((s: any) => s.levelId === level.id) || [];
                 
                 return (
-                  <Card key={level.id} className="border border-slate-200">
+                  <Card
+                    key={level.id}
+                    draggable
+                    onDragStart={() => setDraggedLevelId(level.id)}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      if (draggedLevelId !== level.id) {
+                        setDragOverLevelId(level.id);
+                      }
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (draggedLevelId !== null) {
+                        moveLevel(draggedLevelId, level.id);
+                      }
+                      setDragOverLevelId(null);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedLevelId(null);
+                      setDragOverLevelId(null);
+                    }}
+                    className={`border border-slate-200 cursor-move transition-shadow ${
+                      dragOverLevelId === level.id ? "ring-2 ring-primary/40" : ""
+                    } ${draggedLevelId === level.id ? "opacity-60" : ""}`}
+                  >
                     <CardHeader>
                       <div className="flex items-center justify-between mb-3">
-                        <CardTitle className="font-semibold text-slate-900">{level.name}</CardTitle>
+                        <div className="flex items-center gap-2">
+                          <GripVertical className="h-4 w-4 text-slate-400" />
+                          <CardTitle className="font-semibold text-slate-900">{level.name}</CardTitle>
+                        </div>
                         <Badge className={level.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>
                           {level.isActive ? 'Active' : 'Inactive'}
                         </Badge>
@@ -152,6 +307,32 @@ export default function Levels() {
                           </div>
                         </div>
                       )}
+
+                      {(user?.role === "admin" || user?.role === "teacher") && (
+                        <div className="mt-4 pt-3 border-t border-slate-200 flex justify-end gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setEditingLevel(level)}
+                          >
+                            <Pencil className="h-4 w-4 mr-1" />
+                            Edit
+                          </Button>
+                          {user?.role === "admin" && (
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => handleDeleteLevel(level)}
+                              disabled={deleteLevelMutation.isPending}
+                            >
+                              <Trash2 className="h-4 w-4 mr-1" />
+                              Delete
+                            </Button>
+                          )}
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 );
@@ -164,6 +345,14 @@ export default function Levels() {
       <AddLevelModal 
         open={showAddModal} 
         onOpenChange={setShowAddModal}
+      />
+
+      <EditLevelModal
+        open={Boolean(editingLevel)}
+        onOpenChange={(open) => {
+          if (!open) setEditingLevel(null);
+        }}
+        level={editingLevel}
       />
     </div>
   );

@@ -124,6 +124,51 @@ await storage.createUser({
     res.status(500).json({ message: 'Registration failed' });
   }
 });
+
+  // Teacher registration route (admin only - creates user + teacher record)
+  app.post('/api/auth/register-teacher', async (req, res) => {
+    const sessionUser = (req.session as any)?.user;
+    if (!sessionUser || sessionUser.role !== 'admin') {
+      return res.status(403).json({ message: 'Only admins can register teachers' });
+    }
+
+    const { email, password, firstName, lastName, employmentDate } = req.body;
+    if (!email || !password || !firstName || !lastName) {
+      return res.status(400).json({ message: 'email, password, firstName, and lastName are required' });
+    }
+
+    try {
+      const existingUser = await storage.getUserByEmail(email);
+      if (existingUser) {
+        return res.status(400).json({ message: 'A user with that email already exists' });
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const newUser = await storage.createUser({
+        id: randomUUID(),
+        email,
+        password: hashedPassword,
+        firstName,
+        lastName,
+        role: 'teacher',
+      });
+
+      await storage.createTeacher({
+        userId: newUser.id,
+        firstName,
+        lastName,
+        email,
+        employmentDate: employmentDate || new Date().toISOString().split('T')[0],
+        status: 'active',
+      });
+
+      const { password: _, ...userWithoutPassword } = newUser;
+      res.status(201).json(userWithoutPassword);
+    } catch (error) {
+      console.error('Teacher registration error:', error);
+      res.status(500).json({ message: 'Teacher registration failed' });
+    }
+  });
 }
 export const isAuthenticated = (req: express.Request, res: express.Response, next: express.NextFunction) => {
   const user = (req.session as any)?.user;

@@ -20,8 +20,7 @@ export default function Sidebar() {
   ];
 
   const teacherNavItems = [
-    { path: "/", icon: LayoutDashboard, label: "Dashboard" },
-    { path: "/students", icon: Users, label: "Students" },
+    { path: "/", icon: LayoutDashboard, label: "My Dashboard" },
     { path: "/subjects", icon: BookOpen, label: "Subjects" },
     { path: "/grades", icon: ClipboardList, label: "Grades & Assessments" },
     { path: "/forums", icon: MessageCircle, label: "Forums" },
