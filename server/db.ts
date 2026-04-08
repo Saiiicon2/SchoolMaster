@@ -183,10 +183,19 @@ export async function ensureDbAndSeed() {
 							console.log('Seeding default users (Postgres)...');
 							const now = Date.now();
 							const adminPassword = await bcrypt.hash('admin123', 10);
-							const userPassword = await bcrypt.hash('user123', 10);
+							const teacherPassword = await bcrypt.hash('teacher123', 10);
 							await pg`INSERT INTO users (id, email, password, first_name, last_name, role, created_at, updated_at) VALUES (${randomUUID()}, ${'admin@school.com'}, ${adminPassword}, ${'Admin'}, ${'User'}, ${'admin'}, ${now}, ${now})`;
-							await pg`INSERT INTO users (id, email, password, first_name, last_name, role, created_at, updated_at) VALUES (${randomUUID()}, ${'user@school.com'}, ${userPassword}, ${'Normal'}, ${'User'}, ${'teacher'}, ${now}, ${now})`;
-							console.log('Default admin and non-admin users created: admin@school.com / admin123, user@school.com / user123');
+							const teacherUserId = randomUUID();
+							await pg`INSERT INTO users (id, email, password, first_name, last_name, role, created_at, updated_at) VALUES (${teacherUserId}, ${'teacher@school.com'}, ${teacherPassword}, ${'Demo'}, ${'Teacher'}, ${'teacher'}, ${now}, ${now})`;
+							// Seed demo level
+							const levelRows = await pg`INSERT INTO levels (name, description, duration_months, is_active, created_at) VALUES (${'Level 1'}, ${'Foundation level'}, ${6}, ${true}, ${now}) ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name RETURNING id`;
+							const levelId = levelRows[0].id;
+							// Seed teacher profile
+							const teacherRows = await pg`INSERT INTO teachers (user_id, first_name, last_name, email, employment_date, status, created_at) VALUES (${teacherUserId}, ${'Demo'}, ${'Teacher'}, ${'teacher@school.com'}, ${new Date().toISOString().split('T')[0]}, ${'active'}, ${now}) RETURNING id`;
+							const teacherId = teacherRows[0].id;
+							// Assign teacher to level
+							await pg`INSERT INTO teacher_levels (teacher_id, level_id, assigned_date, is_active, created_at) VALUES (${teacherId}, ${levelId}, ${new Date().toISOString().split('T')[0]}, ${true}, ${now})`;
+							console.log('Default users seeded: admin@school.com/admin123, teacher@school.com/teacher123');
 						} else {
 							console.log(`Users table already has ${usersCount} rows, skipping seed.`);
 						}

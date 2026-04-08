@@ -6,13 +6,19 @@ import { type User } from "@shared/schema";
 import { randomUUID } from "crypto"; // at the top if not already there
 
 export function setupLocalAuth(app: express.Express) {
+  // Required for correct cookie handling behind Render / reverse-proxy (HTTPS)
+  app.set('trust proxy', 1);
+
+  const isProduction = process.env.NODE_ENV === 'production';
+
   app.use(session({
     secret: process.env.SESSION_SECRET || 'your-local-dev-secret',
     resave: false,
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: false, // Set to false for local development
+      secure: isProduction,   // true on Render (HTTPS), false locally
+      sameSite: isProduction ? 'none' : 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 1 week
     },
   }));
