@@ -557,6 +557,18 @@ export async function ensureDbAndSeed() {
 					sqlite.prepare("UPDATE campuses SET name='CPT Campus', code='CPT', address='Cape Town' WHERE code='NORT' OR name='North Campus'").run();
 					// Upgrade existing admin@school.com to superadmin
 					sqlite.prepare("UPDATE users SET role='superadmin' WHERE email='admin@school.com' AND role='admin'").run();
+
+					// Seed finance user if missing
+					const financeRow: any = sqlite.prepare("SELECT id FROM users WHERE email='finance@school.com'").get();
+					if (!financeRow) {
+						const financePass = await bcrypt.hash('finance123', 10);
+						const now2 = Date.now();
+						sqlite.prepare(
+							`INSERT INTO users (id, email, password, first_name, last_name, role, campus_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+						).run(randomUUID(), 'finance@school.com', financePass, 'Finance', 'User', 'finance', null, now2, now2);
+						console.log('Migration: finance@school.com / finance123 created');
+					}
+
 					console.log('Migration: campuses renamed to PE/CPT; admin upgraded to superadmin');
 				} catch (e) {
 					/* ignore */
@@ -575,9 +587,11 @@ export async function ensureDbAndSeed() {
 							`INSERT INTO users (id, email, password, first_name, last_name, role, campus_id, created_at, updated_at)
 							 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 						);
+					const financePassword = await bcrypt.hash('finance123', 10);
 					insert.run(randomUUID(), 'admin@school.com', adminPassword, 'Admin', 'User', 'superadmin', null, now, now);
 					insert.run(randomUUID(), 'user@school.com', userPassword, 'Normal', 'User', 'teacher', null, now, now);
-					console.log('Default superadmin created: admin@school.com / admin123, teacher: user@school.com / user123');
+					insert.run(randomUUID(), 'finance@school.com', financePassword, 'Finance', 'User', 'finance', null, now, now);
+					console.log('Default superadmin created: admin@school.com / admin123, teacher: user@school.com / user123, finance: finance@school.com / finance123');
 					} else {
 						console.log(`Users table already has ${count} rows, skipping seed.`);
 					}
