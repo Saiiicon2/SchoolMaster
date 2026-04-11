@@ -16,8 +16,8 @@ export default function Landing() {
                 <GraduationCap className="h-5 w-5 text-white" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-slate-900">EduAdmin</h1>
-                <p className="text-xs text-slate-500">School Management System</p>
+                <h1 className="text-xl font-bold text-slate-900">Al-Furqān Institute</h1>
+                <p className="text-xs text-slate-500">Institute Management System</p>
               </div>
             </div>
             <Link href="/login">
@@ -33,7 +33,7 @@ export default function Landing() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         <div className="text-center">
           <h1 className="text-4xl font-bold text-slate-900 sm:text-5xl lg:text-6xl">
-            Modern School
+            Al-Furqān Institute
             <span className="text-primary block">Management System</span>
           </h1>
           <p className="mt-6 text-xl text-slate-600 max-w-3xl mx-auto">

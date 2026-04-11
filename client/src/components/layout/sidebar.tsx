@@ -60,7 +60,7 @@ export default function Sidebar() {
             <GraduationCap className="h-5 w-5 text-white" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-slate-900">EduAdmin</h1>
+            <h1 className="text-lg font-bold text-slate-900">Al-Furqān</h1>
             <p className="text-xs text-slate-500">Institute Management</p>
           </div>
         </div>
