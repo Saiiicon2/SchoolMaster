@@ -233,6 +233,20 @@ export async function ensureDbAndSeed() {
 							console.log(`Users table already has ${usersCount} rows, skipping seed.`);
 						}
 
+						// Migrate: ensure admin is superadmin and finance user exists
+						try {
+							await pg`UPDATE users SET role='superadmin' WHERE email='admin@school.com' AND role='admin'`;
+							const financeRows = await pg`SELECT id FROM users WHERE email='finance@school.com'`;
+							if (financeRows.length === 0) {
+								const financePassword = await bcrypt.hash('finance123', 10);
+								const now = Date.now();
+								await pg`INSERT INTO users (id, email, password, first_name, last_name, role, campus_id, created_at, updated_at) VALUES (${randomUUID()}, ${'finance@school.com'}, ${financePassword}, ${'Finance'}, ${'User'}, ${'finance'}, ${null}, ${now}, ${now})`;
+								console.log('Migration: finance@school.com / finance123 created');
+							}
+						} catch (e) {
+							console.error('Migration error (finance user):', e);
+						}
+
 						// Seed campuses
 						const campusCountRow = await pg`SELECT count(*) AS count FROM campuses`;
 						const campusCount = Number(campusCountRow?.[0]?.count ?? 0);
@@ -245,6 +259,12 @@ export async function ensureDbAndSeed() {
 						} else {
 							console.log(`Campuses table already has ${campusCount} rows, skipping campus seed.`);
 						}
+
+						// Migrate: rename old campus names to PE/CPT
+						try {
+							await pg`UPDATE campuses SET name='PE Campus', code='PE', address='Port Elizabeth' WHERE code='MAIN' OR name='Main Campus'`;
+							await pg`UPDATE campuses SET name='CPT Campus', code='CPT', address='Cape Town' WHERE code='NORT' OR name='North Campus'`;
+						} catch (e) { /* ignore */ }
 
 						// Seed students
 						const studentsCountRow = await pg`SELECT count(*) AS count FROM students`;
