@@ -75,7 +75,7 @@ export default function Forums() {
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <CardTitle>Forums</CardTitle>
-                    {user?.role === 'admin' && (
+                    {(user?.role === 'admin' || user?.role === 'superadmin') && (
                       <Button size="sm" className="bg-primary hover:bg-primary/90">
                         <Plus className="h-4 w-4" />
                       </Button>

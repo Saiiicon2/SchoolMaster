@@ -289,7 +289,7 @@ export default function Teachers() {
         open={showDetailsModal}
         onOpenChange={setShowDetailsModal}
         teacherId={selectedTeacherId}
-        isAdmin={user?.role === 'admin'}
+        isAdmin={user?.role === 'admin' || user?.role === 'superadmin'}
         levels={levels}
       />
     </div>

@@ -43,7 +43,7 @@ await storage.createUser({
   password: hashedPassword,
   firstName: "Admin",
   lastName: "User",
-  role: "admin"
+  role: "superadmin"
 });
       console.log(" Default admin created");
     }
@@ -134,11 +134,11 @@ await storage.createUser({
   // Teacher registration route (admin only - creates user + teacher record)
   app.post('/api/auth/register-teacher', async (req, res) => {
     const sessionUser = (req.session as any)?.user;
-    if (!sessionUser || sessionUser.role !== 'admin') {
+    if (!sessionUser || (sessionUser.role !== 'admin' && sessionUser.role !== 'superadmin')) {
       return res.status(403).json({ message: 'Only admins can register teachers' });
     }
 
-    const { email, password, firstName, lastName, employmentDate } = req.body;
+    const { email, password, firstName, lastName, employmentDate, campusId } = req.body;
     if (!email || !password || !firstName || !lastName) {
       return res.status(400).json({ message: 'email, password, firstName, and lastName are required' });
     }
@@ -157,6 +157,7 @@ await storage.createUser({
         firstName,
         lastName,
         role: 'teacher',
+        campusId: campusId ? parseInt(campusId) : undefined,
       });
 
       await storage.createTeacher({

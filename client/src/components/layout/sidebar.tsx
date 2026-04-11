@@ -2,12 +2,14 @@ import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
-import { GraduationCap, LayoutDashboard, Users, Layers, BookOpen, ClipboardList, MessageCircle, LogOut, User } from "lucide-react";
+import { GraduationCap, LayoutDashboard, Users, Layers, BookOpen, ClipboardList, MessageCircle, LogOut, User, DollarSign, BarChart3 } from "lucide-react";
 
 export default function Sidebar() {
   const [location] = useLocation();
   const { user } = useAuth();
-  const [currentRole, setCurrentRole] = useState<'admin' | 'teacher' | 'student'>(user?.role as any || 'student');
+  const [currentRole, setCurrentRole] = useState<'admin' | 'teacher' | 'student' | 'finance'>(
+    (user?.role === 'admin' || user?.role === 'superadmin') ? 'admin' : user?.role as any || 'student'
+  );
 
   const adminNavItems = [
     { path: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -17,6 +19,13 @@ export default function Sidebar() {
     { path: "/subjects", icon: BookOpen, label: "Subjects" },
     { path: "/grades", icon: ClipboardList, label: "Grades & Assessments" },
     { path: "/forums", icon: MessageCircle, label: "Forums" },
+    { path: "/finance-dashboard", icon: BarChart3, label: "Finance Dashboard" },
+    { path: "/finance", icon: DollarSign, label: "Payment Tracking" },
+  ];
+
+  const financeNavItems = [
+    { path: "/finance-dashboard", icon: BarChart3, label: "Finance Dashboard" },
+    { path: "/finance", icon: DollarSign, label: "Payment Tracking" },
   ];
 
   const teacherNavItems = [
@@ -34,6 +43,7 @@ export default function Sidebar() {
   ];
 
   const getNavItems = () => {
+    if (currentRole === 'finance') return financeNavItems;
     if (currentRole === 'admin') return adminNavItems;
     if (currentRole === 'teacher') return teacherNavItems;
     return studentNavItems;
@@ -56,11 +66,11 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* Role Switcher - Only show for admin and teacher users */}
-      {(user?.role === 'admin' || user?.role === 'teacher') && (
+{/* Role Switcher - Only show for admin/superadmin and teacher users (not finance) */}
+      {(user?.role === 'admin' || user?.role === 'superadmin' || user?.role === 'teacher') && user?.role !== 'finance' && (
         <div className="p-4 border-b border-slate-200">
           <div className="bg-slate-100 rounded-lg p-1 flex flex-col space-y-1">
-            {user?.role === 'admin' && (
+            {(user?.role === 'admin' || user?.role === 'superadmin') && (
               <button
                 className={`py-2 px-3 text-sm font-medium rounded-md transition-all ${
                   currentRole === 'admin'
@@ -69,10 +79,10 @@ export default function Sidebar() {
                 }`}
                 onClick={() => setCurrentRole('admin')}
               >
-                Admin View
+                {user?.role === 'superadmin' ? 'Superadmin View' : 'Admin View'}
               </button>
             )}
-            {user?.role === 'admin' && (
+            {(user?.role === 'admin' || user?.role === 'superadmin') && (
               <button
                 className={`py-2 px-3 text-sm font-medium rounded-md transition-all ${
                   currentRole === 'teacher'
@@ -134,7 +144,7 @@ export default function Sidebar() {
               {user?.firstName || user?.email || 'User'}
             </p>
             <p className="text-xs text-slate-500">
-              {currentRole === 'admin' ? 'Administrator' : currentRole === 'teacher' ? 'Teacher' : 'Student'}
+              {user?.role === 'finance' ? 'Finance' : currentRole === 'admin' && user?.role === 'superadmin' ? 'Super Administrator' : currentRole === 'admin' ? 'Administrator' : currentRole === 'teacher' ? 'Teacher' : 'Student'}
             </p>
           </div>
           <Button

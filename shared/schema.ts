@@ -30,7 +30,8 @@ export const users = sqliteTable("users", {
   firstName: text("first_name"),
   lastName: text("last_name"),
   profileImageUrl: text("profile_image_url"),
-  role: text("role").notNull().default("student"), // 'admin', 'teacher', or 'student'
+  role: text("role").notNull().default("student"), // 'superadmin', 'admin', 'teacher', or 'student'
+  campusId: integer("campus_id").references(() => campuses.id), // null = superadmin (all campuses)
   createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
   updatedAt: integer("updated_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
 });
@@ -363,3 +364,58 @@ export type InsertAssessmentResult = z.infer<typeof insertAssessmentResultSchema
 export type AssessmentResult = typeof assessmentResults.$inferSelect;
 export type InsertCampus = z.infer<typeof insertCampusSchema>;
 export type Campus = typeof campuses.$inferSelect;
+
+// ─── Finance ──────────────────────────────────────────────────────────────────
+
+// Fee configuration (one active config at a time per campus)
+export const feeConfigs = sqliteTable("fee_configs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  campusId: integer("campus_id").references(() => campuses.id),
+  baseFee: real("base_fee").notNull(),
+  billingPeriod: text("billing_period").notNull().default("month"), // 'month' | 'quarter'
+  effectiveFrom: text("effective_from").notNull(), // YYYY-MM-DD
+  createdById: text("created_by_id").references(() => users.id),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
+});
+
+// Payment records per student per billing period
+export const payments = sqliteTable("payments", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  studentId: integer("student_id").references(() => students.id).notNull(),
+  campusId: integer("campus_id").references(() => campuses.id),
+  feeConfigId: integer("fee_config_id").references(() => feeConfigs.id),
+  billingPeriod: text("billing_period").notNull(), // 'month' | 'quarter'
+  periodLabel: text("period_label").notNull(), // e.g. '2026-04' or '2026-Q2'
+  amountDue: real("amount_due").notNull(),
+  amountPaid: real("amount_paid").notNull().default(0),
+  status: text("status").notNull().default("unpaid"), // 'paid' | 'partial' | 'unpaid' | 'flagged'
+  dueDate: text("due_date").notNull(), // YYYY-MM-DD
+  paidDate: text("paid_date"), // YYYY-MM-DD, null until paid
+  notes: text("notes"),
+  recordedById: text("recorded_by_id").references(() => users.id),
+  createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
+});
+
+// Finance relations
+export const feeConfigsRelations = relations(feeConfigs, ({ one }) => ({
+  campus: one(campuses, { fields: [feeConfigs.campusId], references: [campuses.id] }),
+  createdBy: one(users, { fields: [feeConfigs.createdById], references: [users.id] }),
+}));
+
+export const paymentsRelations = relations(payments, ({ one }) => ({
+  student: one(students, { fields: [payments.studentId], references: [students.id] }),
+  campus: one(campuses, { fields: [payments.campusId], references: [campuses.id] }),
+  feeConfig: one(feeConfigs, { fields: [payments.feeConfigId], references: [feeConfigs.id] }),
+  recordedBy: one(users, { fields: [payments.recordedById], references: [users.id] }),
+}));
+
+// Insert schemas
+export const insertFeeConfigSchema = createInsertSchema(feeConfigs).omit({ id: true, createdAt: true });
+export const insertPaymentSchema = createInsertSchema(payments).omit({ id: true, createdAt: true, updatedAt: true });
+
+// Types
+export type InsertFeeConfig = z.infer<typeof insertFeeConfigSchema>;
+export type FeeConfig = typeof feeConfigs.$inferSelect;
+export type InsertPayment = z.infer<typeof insertPaymentSchema>;
+export type Payment = typeof payments.$inferSelect;

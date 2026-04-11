@@ -90,7 +90,7 @@ export default function Students() {
                       className="pl-10 w-64"
                     />
                   </div>
-                  {(user?.role === 'admin' || user?.role === 'teacher') && (
+                  {(user?.role === 'admin' || user?.role === 'superadmin' || user?.role === 'teacher') && (
                     <Button 
                       onClick={() => setShowAddModal(true)}
                       className="bg-primary hover:bg-primary/90"
@@ -174,7 +174,7 @@ export default function Students() {
                                 <Button variant="ghost" size="sm" onClick={() => { setSelectedStudentId(student.id); setShowGradesModal(true); }}>
                                   <Eye className="h-4 w-4 text-primary" />
                                 </Button>
-                                {user?.role === 'admin' && (
+                                {(user?.role === 'admin' || user?.role === 'superadmin') && (
                                   <Button variant="ghost" size="sm">
                                     <Edit className="h-4 w-4 text-slate-400" />
                                   </Button>

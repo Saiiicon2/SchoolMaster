@@ -200,7 +200,7 @@ export default function Levels() {
               <h2 className="text-2xl font-bold text-slate-900">Academic Levels</h2>
               <p className="text-slate-600">Configure levels and track student progression</p>
             </div>
-            {user?.role === 'admin' && (
+            {(user?.role === 'admin' || user?.role === 'superadmin') && (
               <Button 
                 onClick={() => setShowAddModal(true)}
                 className="bg-primary hover:bg-primary/90"
@@ -308,7 +308,7 @@ export default function Levels() {
                         </div>
                       )}
 
-                      {(user?.role === "admin" || user?.role === "teacher") && (
+                      {(user?.role === "admin" || user?.role === "superadmin" || user?.role === "teacher") && (
                         <div className="mt-4 pt-3 border-t border-slate-200 flex justify-end gap-2">
                           <Button
                             type="button"
@@ -319,7 +319,7 @@ export default function Levels() {
                             <Pencil className="h-4 w-4 mr-1" />
                             Edit
                           </Button>
-                          {user?.role === "admin" && (
+                          {(user?.role === "admin" || user?.role === "superadmin") && (
                             <Button
                               type="button"
                               variant="destructive"

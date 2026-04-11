@@ -36,9 +36,14 @@ export async function ensureDbAndSeed() {
         last_name TEXT,
         profile_image_url TEXT,
         role TEXT NOT NULL DEFAULT 'student',
+        campus_id INTEGER,
         created_at INTEGER,
         updated_at INTEGER
       );`;
+      // Migration: add campus_id to existing users table
+      try {
+        await pg`ALTER TABLE users ADD COLUMN IF NOT EXISTS campus_id INTEGER`;
+      } catch (e) { /* column may already exist */ }
 
 						await pg`CREATE TABLE IF NOT EXISTS campuses (
 							id SERIAL PRIMARY KEY,
@@ -174,7 +179,35 @@ export async function ensureDbAndSeed() {
 							content TEXT NOT NULL,
 							created_at INTEGER,
 							updated_at INTEGER
-						);`;
+						)`;
+
+						await pg`CREATE TABLE IF NOT EXISTS fee_configs (
+							id SERIAL PRIMARY KEY,
+							campus_id INTEGER REFERENCES campuses(id),
+							base_fee REAL NOT NULL,
+							billing_period TEXT NOT NULL DEFAULT 'month',
+							effective_from TEXT NOT NULL,
+							created_by_id TEXT,
+							created_at INTEGER
+						)`;
+
+						await pg`CREATE TABLE IF NOT EXISTS payments (
+							id SERIAL PRIMARY KEY,
+							student_id INTEGER NOT NULL REFERENCES students(id),
+							campus_id INTEGER REFERENCES campuses(id),
+							fee_config_id INTEGER REFERENCES fee_configs(id),
+							billing_period TEXT NOT NULL,
+							period_label TEXT NOT NULL,
+							amount_due REAL NOT NULL,
+							amount_paid REAL NOT NULL DEFAULT 0,
+							status TEXT NOT NULL DEFAULT 'unpaid',
+							due_date TEXT NOT NULL,
+							paid_date TEXT,
+							notes TEXT,
+							recorded_by_id TEXT,
+							created_at INTEGER,
+							updated_at INTEGER
+						)`;
 
 						// Seed users
 						const usersCountRow = await pg`SELECT count(*) AS count FROM users`;
@@ -184,7 +217,7 @@ export async function ensureDbAndSeed() {
 							const now = Date.now();
 							const adminPassword = await bcrypt.hash('admin123', 10);
 							const teacherPassword = await bcrypt.hash('teacher123', 10);
-							await pg`INSERT INTO users (id, email, password, first_name, last_name, role, created_at, updated_at) VALUES (${randomUUID()}, ${'admin@school.com'}, ${adminPassword}, ${'Admin'}, ${'User'}, ${'admin'}, ${now}, ${now})`;
+					await pg`INSERT INTO users (id, email, password, first_name, last_name, role, campus_id, created_at, updated_at) VALUES (${randomUUID()}, ${'admin@school.com'}, ${adminPassword}, ${'Admin'}, ${'User'}, ${'superadmin'}, ${null}, ${now}, ${now})`;
 							const teacherUserId = randomUUID();
 							await pg`INSERT INTO users (id, email, password, first_name, last_name, role, created_at, updated_at) VALUES (${teacherUserId}, ${'teacher@school.com'}, ${teacherPassword}, ${'Demo'}, ${'Teacher'}, ${'teacher'}, ${now}, ${now})`;
 							// Seed demo level
@@ -206,9 +239,9 @@ export async function ensureDbAndSeed() {
 						if (campusCount === 0) {
 							console.log('Seeding sample campuses (Postgres)...');
 							const now = Date.now();
-							await pg`INSERT INTO campuses (name, code, address, is_active, created_at) VALUES (${ 'Main Campus' }, ${ 'MAIN' }, ${ '123 Main St' }, ${ true }, ${ now })`;
-							await pg`INSERT INTO campuses (name, code, address, is_active, created_at) VALUES (${ 'North Campus' }, ${ 'NORT' }, ${ '456 North Ave' }, ${ true }, ${ now })`;
-							console.log('Sample campuses created: Main Campus, North Campus');
+					await pg`INSERT INTO campuses (name, code, address, is_active, created_at) VALUES (${ 'PE Campus' }, ${ 'PE' }, ${ 'Port Elizabeth' }, ${ true }, ${ now })`;
+					await pg`INSERT INTO campuses (name, code, address, is_active, created_at) VALUES (${ 'CPT Campus' }, ${ 'CPT' }, ${ 'Cape Town' }, ${ true }, ${ now })`;
+					console.log('Campuses created: PE Campus, CPT Campus');
 						} else {
 							console.log(`Campuses table already has ${campusCount} rows, skipping campus seed.`);
 						}
@@ -258,11 +291,20 @@ export async function ensureDbAndSeed() {
 						last_name TEXT,
 						profile_image_url TEXT,
 						role TEXT NOT NULL DEFAULT 'student',
+						campus_id INTEGER,
 						created_at INTEGER,
 						updated_at INTEGER
 					);
 				`;
 				sqlite.exec(createUsersSQL);
+				// Migration: add campus_id to existing users table
+				try {
+					const userCols = sqlite.prepare("PRAGMA table_info('users')").all();
+					if (!userCols.some((c: any) => c.name === 'campus_id')) {
+						sqlite.exec('ALTER TABLE users ADD COLUMN campus_id INTEGER;');
+						console.log('Migrated users table: added campus_id column');
+					}
+				} catch (e) { /* ignore */ }
 
 				const createLevelsSQL = `
 					CREATE TABLE IF NOT EXISTS levels (
@@ -460,6 +502,38 @@ export async function ensureDbAndSeed() {
 				`;
 				sqlite.exec(createForumPostsSQL);
 
+				// Finance tables
+				sqlite.exec(`
+					CREATE TABLE IF NOT EXISTS fee_configs (
+						id INTEGER PRIMARY KEY AUTOINCREMENT,
+						campus_id INTEGER REFERENCES campuses(id),
+						base_fee REAL NOT NULL,
+						billing_period TEXT NOT NULL DEFAULT 'month',
+						effective_from TEXT NOT NULL,
+						created_by_id TEXT,
+						created_at INTEGER
+					);
+				`);
+				sqlite.exec(`
+					CREATE TABLE IF NOT EXISTS payments (
+						id INTEGER PRIMARY KEY AUTOINCREMENT,
+						student_id INTEGER NOT NULL REFERENCES students(id),
+						campus_id INTEGER REFERENCES campuses(id),
+						fee_config_id INTEGER REFERENCES fee_configs(id),
+						billing_period TEXT NOT NULL,
+						period_label TEXT NOT NULL,
+						amount_due REAL NOT NULL,
+						amount_paid REAL NOT NULL DEFAULT 0,
+						status TEXT NOT NULL DEFAULT 'unpaid',
+						due_date TEXT NOT NULL,
+						paid_date TEXT,
+						notes TEXT,
+						recorded_by_id TEXT,
+						created_at INTEGER,
+						updated_at INTEGER
+					);
+				`);
+
 				// Lightweight migration: ensure students has campus_id column (for older DBs)
 				try {
 					const info = sqlite.prepare("PRAGMA table_info('students')").all();
@@ -477,6 +551,17 @@ export async function ensureDbAndSeed() {
 					/* ignore */
 				}
 
+				// Migration: rename old campus names to PE/CPT and add campus_id to users
+				try {
+					sqlite.prepare("UPDATE campuses SET name='PE Campus', code='PE', address='Port Elizabeth' WHERE code='MAIN' OR name='Main Campus'").run();
+					sqlite.prepare("UPDATE campuses SET name='CPT Campus', code='CPT', address='Cape Town' WHERE code='NORT' OR name='North Campus'").run();
+					// Upgrade existing admin@school.com to superadmin
+					sqlite.prepare("UPDATE users SET role='superadmin' WHERE email='admin@school.com' AND role='admin'").run();
+					console.log('Migration: campuses renamed to PE/CPT; admin upgraded to superadmin');
+				} catch (e) {
+					/* ignore */
+				}
+
 				// Seed users
 				try {
 					const row: any = sqlite.prepare('SELECT count(*) as count FROM users').get();
@@ -487,12 +572,12 @@ export async function ensureDbAndSeed() {
 						const adminPassword = await bcrypt.hash('admin123', 10);
 						const userPassword = await bcrypt.hash('user123', 10);
 						const insert = sqlite.prepare(
-							`INSERT INTO users (id, email, password, first_name, last_name, role, created_at, updated_at)
-							 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+							`INSERT INTO users (id, email, password, first_name, last_name, role, campus_id, created_at, updated_at)
+							 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 						);
-						insert.run(randomUUID(), 'admin@school.com', adminPassword, 'Admin', 'User', 'admin', now, now);
-						insert.run(randomUUID(), 'user@school.com', userPassword, 'Normal', 'User', 'teacher', now, now);
-						console.log('Default admin and non-admin users created: admin@school.com / admin123, user@school.com / user123');
+					insert.run(randomUUID(), 'admin@school.com', adminPassword, 'Admin', 'User', 'superadmin', null, now, now);
+					insert.run(randomUUID(), 'user@school.com', userPassword, 'Normal', 'User', 'teacher', null, now, now);
+					console.log('Default superadmin created: admin@school.com / admin123, teacher: user@school.com / user123');
 					} else {
 						console.log(`Users table already has ${count} rows, skipping seed.`);
 					}
@@ -508,9 +593,9 @@ export async function ensureDbAndSeed() {
 						console.log('Seeding sample campuses...');
 						const insertCampus = sqlite.prepare(`INSERT INTO campuses (name, code, address, is_active, created_at) VALUES (?, ?, ?, ?, ?)`);
 						const now = Date.now();
-						insertCampus.run('Main Campus', 'MAIN', '123 Main St', 1, now);
-						insertCampus.run('North Campus', 'NORT', '456 North Ave', 1, now);
-						console.log('Sample campuses created: Main Campus, North Campus');
+					insertCampus.run('PE Campus', 'PE', 'Port Elizabeth', 1, now);
+					insertCampus.run('CPT Campus', 'CPT', 'Cape Town', 1, now);
+					console.log('Campuses created: PE Campus, CPT Campus');
 					} else {
 						console.log(`Campuses table already has ${campusCount} rows, skipping campus seed.`);
 					}

@@ -26,6 +26,21 @@ function getUserId(req: any) {
   return req.user?.claims?.sub ?? req.user?.id;
 }
 
+// Returns the campusId to filter by, or undefined if user can see all (superadmin)
+function getCampusScope(user: any): number | undefined {
+  if (!user || user.role === 'superadmin') return undefined;
+  return user.campusId ?? undefined;
+}
+
+// Check if a user has admin-level privileges (superadmin or campus admin)
+function isAdminOrSuper(user: any): boolean {
+  return user?.role === 'admin' || user?.role === 'superadmin';
+}
+
+function isTeacherOrAdmin(user: any): boolean {
+  return user?.role === 'teacher' || isAdminOrSuper(user);
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup auth (local or external OIDC)
   if (process.env.AUTH_DOMAINS) {
@@ -52,7 +67,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Dashboard stats
   app.get('/api/dashboard/stats', isAuthenticated, async (req: any, res) => {
     try {
-      const stats = await storage.getDashboardStats();
+      const user = await storage.getUser(getUserId(req));
+      const stats = await storage.getDashboardStats(getCampusScope(user));
       res.json(stats);
     } catch (error) {
       console.error("Error fetching dashboard stats:", error);
@@ -62,7 +78,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/dashboard/activity', isAuthenticated, async (req: any, res) => {
     try {
-      const activity = await storage.getRecentActivity();
+      const user = await storage.getUser(getUserId(req));
+      const activity = await storage.getRecentActivity(getCampusScope(user));
       res.json(activity);
     } catch (error) {
       console.error("Error fetching recent activity:", error);
@@ -73,7 +90,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Student routes
   app.get('/api/students', isAuthenticated, async (req: any, res) => {
     try {
-      const students = await storage.getAllStudents();
+      const user = await storage.getUser(getUserId(req));
+      // Superadmin can optionally filter by ?campusId=N; other roles see only their campus
+      let campusId = getCampusScope(user);
+      if (user?.role === 'superadmin' && req.query.campusId) {
+        campusId = parseInt(req.query.campusId as string);
+      }
+      const students = await storage.getAllStudents(campusId);
       res.json(students);
     } catch (error) {
       console.error("Error fetching students:", error);
@@ -109,7 +132,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/students', isAuthenticated, async (req: any, res) => {
     try {
       const user = await storage.getUser(getUserId(req));
-      if (user?.role !== 'admin' && user?.role !== 'teacher') {
+      if (!isTeacherOrAdmin(user)) {
         return res.status(403).json({ message: "Only admins and teachers can create students" });
       }
 
@@ -126,23 +149,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/attendance', isAuthenticated, async (req: any, res) => {
     try {
       const date = req.query.date || new Date().toISOString().split('T')[0];
+      const user = await storage.getUser(getUserId(req));
+      const campusId = getCampusScope(user);
       if (pg) {
-        const rows = await pg`
-          SELECT s.id as "studentId", s.student_number as "studentNumber", s.first_name as "firstName", s.last_name as "lastName",
-                 a.status as status, a.note as note
-          FROM students s
-          LEFT JOIN attendance a ON s.id = a.student_id AND a.attendance_date = ${date}
-          ORDER BY s.student_number
-        `;
+        const rows = campusId !== undefined
+          ? await pg`
+              SELECT s.id as "studentId", s.student_number as "studentNumber", s.first_name as "firstName", s.last_name as "lastName",
+                     a.status as status, a.note as note
+              FROM students s
+              LEFT JOIN attendance a ON s.id = a.student_id AND a.attendance_date = ${date}
+              WHERE s.campus_id = ${campusId}
+              ORDER BY s.student_number
+            `
+          : await pg`
+              SELECT s.id as "studentId", s.student_number as "studentNumber", s.first_name as "firstName", s.last_name as "lastName",
+                     a.status as status, a.note as note
+              FROM students s
+              LEFT JOIN attendance a ON s.id = a.student_id AND a.attendance_date = ${date}
+              ORDER BY s.student_number
+            `;
         res.json(rows);
       } else {
-        const rows = sqlite.prepare(`
-          SELECT s.id as studentId, s.student_number as studentNumber, s.first_name as firstName, s.last_name as lastName,
-                 a.status as status, a.note as note
-          FROM students s
-          LEFT JOIN attendance a ON s.id = a.student_id AND a.attendance_date = ?
-          ORDER BY s.student_number
-        `).all(date);
+        const rows = campusId !== undefined
+          ? sqlite.prepare(`
+              SELECT s.id as studentId, s.student_number as studentNumber, s.first_name as firstName, s.last_name as lastName,
+                     a.status as status, a.note as note
+              FROM students s
+              LEFT JOIN attendance a ON s.id = a.student_id AND a.attendance_date = ?
+              WHERE s.campus_id = ?
+              ORDER BY s.student_number
+            `).all(date, campusId)
+          : sqlite.prepare(`
+              SELECT s.id as studentId, s.student_number as studentNumber, s.first_name as firstName, s.last_name as lastName,
+                     a.status as status, a.note as note
+              FROM students s
+              LEFT JOIN attendance a ON s.id = a.student_id AND a.attendance_date = ?
+              ORDER BY s.student_number
+            `).all(date);
         res.json(rows);
       }
     } catch (error) {
@@ -195,7 +238,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put('/api/students/:id', isAuthenticated, async (req: any, res) => {
     try {
       const user = await storage.getUser(getUserId(req));
-      if (user?.role !== 'admin') {
+      if (!isAdminOrSuper(user)) {
         return res.status(403).json({ message: "Only admins can update students" });
       }
 
@@ -221,7 +264,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/levels', isAuthenticated, async (req: any, res) => {
     try {
       const user = await storage.getUser(getUserId(req));
-      if (user?.role !== 'admin' && user?.role !== 'teacher') {
+      if (!isTeacherOrAdmin(user)) {
         return res.status(403).json({ message: "Only admins and teachers can create levels" });
       }
 
@@ -237,7 +280,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put('/api/levels/:id', isAuthenticated, async (req: any, res) => {
     try {
       const user = await storage.getUser(getUserId(req));
-      if (user?.role !== 'admin' && user?.role !== 'teacher') {
+      if (!isTeacherOrAdmin(user)) {
         return res.status(403).json({ message: "Only admins and teachers can update levels" });
       }
 
@@ -253,7 +296,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete('/api/levels/:id', isAuthenticated, async (req: any, res) => {
     try {
       const user = await storage.getUser(getUserId(req));
-      if (user?.role !== 'admin') {
+      if (!isAdminOrSuper(user)) {
         return res.status(403).json({ message: "Only admins can delete levels" });
       }
 
@@ -318,7 +361,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/subjects', isAuthenticated, async (req: any, res) => {
     try {
       const user = await storage.getUser(getUserId(req));
-      if (user?.role !== 'admin' && user?.role !== 'teacher') {
+      if (!isTeacherOrAdmin(user)) {
         return res.status(403).json({ message: "Only admins and teachers can create subjects" });
       }
 
@@ -350,7 +393,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put('/api/subjects/:id', isAuthenticated, async (req: any, res) => {
     try {
       const user = await storage.getUser(getUserId(req));
-      if (user?.role !== 'admin' && user?.role !== 'teacher') {
+      if (!isTeacherOrAdmin(user)) {
         return res.status(403).json({ message: "Only admins and teachers can update subjects" });
       }
 
@@ -377,8 +420,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/campuses', isAuthenticated, async (req: any, res) => {
     try {
       const user = await storage.getUser(getUserId(req));
-      if (user?.role !== 'admin' && user?.role !== 'teacher') {
-        return res.status(403).json({ message: 'Only admins and teachers can create campuses' });
+      if (user?.role !== 'superadmin') {
+        return res.status(403).json({ message: 'Only superadmin can create campuses' });
       }
 
       const validated = insertCampusSchema.parse(req.body);
@@ -414,7 +457,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/grades', isAuthenticated, async (req: any, res) => {
     try {
       const user = await storage.getUser(getUserId(req));
-      if (user?.role !== 'admin' && user?.role !== 'teacher') {
+      if (!isTeacherOrAdmin(user)) {
         return res.status(403).json({ message: "Only admins and teachers can enter grades" });
       }
 
@@ -454,7 +497,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/forums', isAuthenticated, async (req: any, res) => {
     try {
       const user = await storage.getUser(getUserId(req));
-      if (user?.role !== 'admin') {
+      if (!isAdminOrSuper(user)) {
         return res.status(403).json({ message: "Only admins can create forums" });
       }
 
@@ -486,7 +529,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/students/:id/progress', isAuthenticated, async (req: any, res) => {
     try {
       const user = await storage.getUser(getUserId(req));
-      if (user?.role !== 'admin') {
+      if (!isAdminOrSuper(user)) {
         return res.status(403).json({ message: "Only admins can progress students" });
       }
 
@@ -502,7 +545,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Teacher routes
   app.get('/api/teachers', isAuthenticated, async (req: any, res) => {
     try {
-      const teachers = await storage.getAllTeachers();
+      const user = await storage.getUser(getUserId(req));
+      let campusId = getCampusScope(user);
+      if (user?.role === 'superadmin' && req.query.campusId) {
+        campusId = parseInt(req.query.campusId as string);
+      }
+      const teachers = await storage.getAllTeachers(campusId);
       res.json(teachers);
     } catch (error) {
       console.error("Error fetching teachers:", error);
@@ -526,7 +574,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/teachers', isAuthenticated, async (req: any, res) => {
     try {
       const user = await storage.getUser(getUserId(req));
-      if (user?.role !== 'admin') {
+      if (!isAdminOrSuper(user)) {
         return res.status(403).json({ message: "Only admins can create teachers" });
       }
 
@@ -552,7 +600,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/teachers/:id/subjects', isAuthenticated, async (req: any, res) => {
     try {
       const user = await storage.getUser(getUserId(req));
-      if (user?.role !== 'admin') {
+      if (!isAdminOrSuper(user)) {
         return res.status(403).json({ message: "Only admins can assign subjects to teachers" });
       }
 
@@ -568,7 +616,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put('/api/teachers/:id', isAuthenticated, async (req: any, res) => {
     try {
       const user = await storage.getUser(getUserId(req));
-      if (user?.role !== 'admin') {
+      if (!isAdminOrSuper(user)) {
         return res.status(403).json({ message: "Only admins can update teachers" });
       }
 
@@ -584,7 +632,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete('/api/teachers/:id', isAuthenticated, async (req: any, res) => {
     try {
       const user = await storage.getUser(getUserId(req));
-      if (user?.role !== 'admin') {
+      if (!isAdminOrSuper(user)) {
         return res.status(403).json({ message: "Only admins can delete teachers" });
       }
 
@@ -609,7 +657,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/teachers/:id/levels', isAuthenticated, async (req: any, res) => {
     try {
       const user = await storage.getUser(getUserId(req));
-      if (user?.role !== 'admin') {
+      if (!isAdminOrSuper(user)) {
         return res.status(403).json({ message: "Only admins can assign levels to teachers" });
       }
 
@@ -625,7 +673,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete('/api/teachers/:id/levels/:levelId', isAuthenticated, async (req: any, res) => {
     try {
       const user = await storage.getUser(getUserId(req));
-      if (user?.role !== 'admin') {
+      if (!isAdminOrSuper(user)) {
         return res.status(403).json({ message: "Only admins can remove level assignments" });
       }
 
@@ -661,7 +709,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/assessments', isAuthenticated, async (req: any, res) => {
     try {
       const user = await storage.getUser(getUserId(req));
-      if (user?.role !== 'admin' && user?.role !== 'teacher') {
+      if (!isTeacherOrAdmin(user)) {
         return res.status(403).json({ message: "Only admins and teachers can create assessments" });
       }
 
@@ -690,7 +738,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/assessment-results', isAuthenticated, async (req: any, res) => {
     try {
       const user = await storage.getUser(getUserId(req));
-      if (user?.role !== 'admin' && user?.role !== 'teacher') {
+      if (!isTeacherOrAdmin(user)) {
         return res.status(403).json({ message: "Only admins and teachers can enter assessment results" });
       }
 
@@ -709,7 +757,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put('/api/assessment-results/:id', isAuthenticated, async (req: any, res) => {
     try {
       const user = await storage.getUser(getUserId(req));
-      if (user?.role !== 'admin' && user?.role !== 'teacher') {
+      if (!isTeacherOrAdmin(user)) {
         return res.status(403).json({ message: "Only admins and teachers can update assessment results" });
       }
 
@@ -725,7 +773,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/assessment-results/bulk', isAuthenticated, async (req: any, res) => {
     try {
       const user = await storage.getUser(getUserId(req));
-      if (user?.role !== 'admin' && user?.role !== 'teacher') {
+      if (!isTeacherOrAdmin(user)) {
         return res.status(403).json({ message: "Only admins and teachers can enter assessment results" });
       }
       const { entries } = req.body; // [{ assessmentId, studentId, score }]
@@ -826,6 +874,132 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error fetching level attendance:', error);
       res.status(500).json({ message: 'Failed to fetch attendance' });
+    }
+  });
+
+  // ─── Finance Routes ──────────────────────────────────────────────────────────
+
+  function isFinanceOrSuper(user: any): boolean {
+    return user?.role === 'finance' || user?.role === 'superadmin';
+  }
+
+  // Fee config
+  app.get('/api/finance/fee-config', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(getUserId(req));
+      if (!isFinanceOrSuper(user)) return res.status(403).json({ message: 'Finance access only' });
+      const campusId = getCampusScope(user);
+      const configs = await storage.getAllFeeConfigs(campusId);
+      res.json(configs);
+    } catch (error) {
+      console.error('Error fetching fee configs:', error);
+      res.status(500).json({ message: 'Failed to fetch fee configs' });
+    }
+  });
+
+  app.post('/api/finance/fee-config', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(getUserId(req));
+      if (!isFinanceOrSuper(user)) return res.status(403).json({ message: 'Finance access only' });
+      const campusId = getCampusScope(user);
+      const config = await storage.createFeeConfig({
+        ...req.body,
+        campusId: req.body.campusId ?? campusId,
+        createdById: getUserId(req),
+      });
+      res.status(201).json(config);
+    } catch (error) {
+      console.error('Error creating fee config:', error);
+      res.status(500).json({ message: 'Failed to create fee config' });
+    }
+  });
+
+  // Finance dashboard stats
+  app.get('/api/finance/stats', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(getUserId(req));
+      if (!isFinanceOrSuper(user)) return res.status(403).json({ message: 'Finance access only' });
+      let campusId = getCampusScope(user);
+      if (user?.role === 'superadmin' && req.query.campusId) {
+        campusId = parseInt(req.query.campusId as string);
+      }
+      const stats = await storage.getFinanceDashboardStats(campusId);
+      res.json(stats);
+    } catch (error) {
+      console.error('Error fetching finance stats:', error);
+      res.status(500).json({ message: 'Failed to fetch finance stats' });
+    }
+  });
+
+  // Payments list
+  app.get('/api/finance/payments', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(getUserId(req));
+      if (!isFinanceOrSuper(user)) return res.status(403).json({ message: 'Finance access only' });
+      let campusId = getCampusScope(user);
+      if (user?.role === 'superadmin' && req.query.campusId) {
+        campusId = parseInt(req.query.campusId as string);
+      }
+      const periodLabel = req.query.periodLabel as string | undefined;
+      const paymentList = await storage.getPayments(campusId, periodLabel);
+      // Enrich with student info
+      const allStudents = await storage.getAllStudents();
+      const enriched = paymentList.map(p => {
+        const student = allStudents.find(s => s.id === p.studentId);
+        return { ...p, studentName: student ? `${student.firstName} ${student.lastName}` : 'Unknown', studentNumber: student?.studentNumber };
+      });
+      res.json(enriched);
+    } catch (error) {
+      console.error('Error fetching payments:', error);
+      res.status(500).json({ message: 'Failed to fetch payments' });
+    }
+  });
+
+  // Update a single payment (mark paid, partial, flag, etc.)
+  app.put('/api/finance/payments/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(getUserId(req));
+      if (!isFinanceOrSuper(user)) return res.status(403).json({ message: 'Finance access only' });
+      const payment = await storage.updatePayment(parseInt(req.params.id), {
+        ...req.body,
+        recordedById: getUserId(req),
+      });
+      res.json(payment);
+    } catch (error) {
+      console.error('Error updating payment:', error);
+      res.status(500).json({ message: 'Failed to update payment' });
+    }
+  });
+
+  // Generate payment records for a billing period
+  app.post('/api/finance/generate-period', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(getUserId(req));
+      if (!isFinanceOrSuper(user)) return res.status(403).json({ message: 'Finance access only' });
+      const { periodLabel, billingPeriod, dueDate, campusId: bodyCampusId } = req.body;
+      if (!periodLabel || !billingPeriod || !dueDate) {
+        return res.status(400).json({ message: 'periodLabel, billingPeriod, and dueDate are required' });
+      }
+      let campusId = getCampusScope(user);
+      if (user?.role === 'superadmin' && bodyCampusId) campusId = parseInt(bodyCampusId);
+      const created = await storage.generatePaymentsForPeriod(campusId, periodLabel, billingPeriod, dueDate, getUserId(req));
+      res.json({ created });
+    } catch (error: any) {
+      console.error('Error generating period:', error);
+      res.status(500).json({ message: error.message || 'Failed to generate payment records' });
+    }
+  });
+
+  // Student payment history
+  app.get('/api/finance/payments/student/:studentId', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(getUserId(req));
+      if (!isFinanceOrSuper(user)) return res.status(403).json({ message: 'Finance access only' });
+      const history = await storage.getPaymentsByStudent(parseInt(req.params.studentId));
+      res.json(history);
+    } catch (error) {
+      console.error('Error fetching student payments:', error);
+      res.status(500).json({ message: 'Failed to fetch student payments' });
     }
   });
 

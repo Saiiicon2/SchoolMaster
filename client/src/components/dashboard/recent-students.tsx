@@ -62,7 +62,7 @@ export default function RecentStudents({ searchTerm = "" }: RecentStudentsProps)
                 <Download className="h-4 w-4 mr-2" />
                 Export
               </Button>
-              {user?.role === 'admin' && (
+              {(user?.role === 'admin' || user?.role === 'superadmin') && (
                 <Button 
                   className="bg-primary text-white hover:bg-primary/90"
                   onClick={() => window.location.href = '/students'}
@@ -144,7 +144,7 @@ export default function RecentStudents({ searchTerm = "" }: RecentStudentsProps)
                           <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
                             <Eye className="h-4 w-4 text-primary" />
                           </Button>
-                          {user?.role === 'admin' && (
+                          {(user?.role === 'admin' || user?.role === 'superadmin') && (
                             <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
                               <Edit className="h-4 w-4 text-slate-400" />
                             </Button>

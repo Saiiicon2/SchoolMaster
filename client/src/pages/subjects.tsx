@@ -244,7 +244,7 @@ export default function Subjects() {
         onOpenChange={setShowDetailsModal}
         subjectId={selectedSubjectId}
         levels={levels || []}
-        isAdmin={user?.role === 'admin'}
+        isAdmin={user?.role === 'admin' || user?.role === 'superadmin'}
       />
     </div>
   );

@@ -157,7 +157,7 @@ export default function Grades() {
     selectedSubject === "all" || assessment.subjectId === parseInt(selectedSubject)
   ) || [];
 
-  const isTeacherOrAdmin = user?.role === 'admin' || user?.role === 'teacher';
+  const isTeacherOrAdmin = user?.role === 'admin' || user?.role === 'superadmin' || user?.role === 'teacher';
   const isStudent = user?.role === 'student';
 
   if (isLoading || !isAuthenticated) {

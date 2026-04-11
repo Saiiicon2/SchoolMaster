@@ -19,7 +19,7 @@ export default function QuickActions() {
   });
 
   // Don't show quick actions for students
-    if (user?.role !== 'admin' && user?.role !== 'teacher') {
+    if (user?.role !== 'admin' && user?.role !== 'superadmin' && user?.role !== 'teacher') {
     return null;
   }
 

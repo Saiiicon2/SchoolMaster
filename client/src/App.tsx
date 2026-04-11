@@ -15,10 +15,13 @@ import Levels from "@/pages/levels";
 import Subjects from "@/pages/subjects";
 import Grades from "@/pages/grades";
 import Forums from "@/pages/forums";
+import FinanceDashboard from "@/pages/finance-dashboard";
+import Finance from "@/pages/finance";
 
 function Router() {
   const { isAuthenticated, isLoading, user } = useAuth();
   const authUser = user as { role?: string } | undefined;
+  const isAdminOrSuper = authUser?.role === 'admin' || authUser?.role === 'superadmin';
 
   return (
     <Switch>
@@ -26,6 +29,12 @@ function Router() {
         <>
           <Route path="/" component={Landing} />
           <Route path="/login" component={Login} />
+        </>
+      ) : authUser?.role === "finance" ? (
+        <>
+          <Route path="/" component={FinanceDashboard} />
+          <Route path="/finance-dashboard" component={FinanceDashboard} />
+          <Route path="/finance" component={Finance} />
         </>
       ) : authUser?.role === "teacher" ? (
         <>
@@ -44,6 +53,8 @@ function Router() {
           <Route path="/subjects" component={Subjects} />
           <Route path="/grades" component={Grades} />
           <Route path="/forums" component={Forums} />
+          <Route path="/finance-dashboard" component={FinanceDashboard} />
+          <Route path="/finance" component={Finance} />
         </>
       )}
       <Route component={NotFound} />

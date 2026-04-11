@@ -13,6 +13,8 @@ import {
   assessments,
   assessmentResults,
   campuses,
+  feeConfigs,
+  payments,
   type User,
   type UpsertUser,
   type Student,
@@ -40,9 +42,13 @@ import {
   type InsertAssessmentResult,
   type Campus,
   type InsertCampus,
+  type FeeConfig,
+  type InsertFeeConfig,
+  type Payment,
+  type InsertPayment,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, or, sql, count, inArray } from "drizzle-orm";
+import { eq, desc, and, or, sql, count, inArray, gte, lte, like } from "drizzle-orm";
 
 export interface IStorage {
   // User operations - required for external OIDC auth
@@ -53,7 +59,7 @@ export interface IStorage {
   getUsers(): Promise<User[]>;
   
   // Student operations
-  getAllStudents(): Promise<Student[]>;
+  getAllStudents(campusId?: number): Promise<Student[]>;
   getStudent(id: number): Promise<Student | undefined>;
   getStudentByNumber(studentNumber: string): Promise<Student | undefined>;
   createStudent(student: InsertStudent): Promise<Student>;
@@ -87,14 +93,14 @@ export interface IStorage {
   createForumPost(post: InsertForumPost): Promise<ForumPost>;
   
   // Statistics
-  getDashboardStats(): Promise<any>;
-  getRecentActivity(): Promise<any[]>;
+  getDashboardStats(campusId?: number): Promise<any>;
+  getRecentActivity(campusId?: number): Promise<any[]>;
   
   // Level progression
   progressStudent(studentId: number, toLevelId: number): Promise<LevelProgression>;
 
   // Teacher operations
-  getAllTeachers(): Promise<Teacher[]>;
+  getAllTeachers(campusId?: number): Promise<Teacher[]>;
   getTeacher(id: number): Promise<Teacher | undefined>;
   getTeacherByUserId(userId: string): Promise<Teacher | undefined>;
   createTeacher(teacher: InsertTeacher): Promise<Teacher>;
@@ -108,6 +114,7 @@ export interface IStorage {
   
   // Campus operations
   getAllCampuses(): Promise<Campus[]>;
+  getCampus(id: number): Promise<Campus | undefined>;
   createCampus(campus: InsertCampus): Promise<Campus>;
   
   // Assessment operations
@@ -119,6 +126,17 @@ export interface IStorage {
   createAssessmentResult(result: InsertAssessmentResult): Promise<AssessmentResult>;
   updateAssessmentResult(id: number, result: Partial<InsertAssessmentResult>): Promise<AssessmentResult>;
   upsertAssessmentResult(assessmentId: number, studentId: number, score: number, enteredBy: string): Promise<AssessmentResult>;
+
+  // Finance operations
+  getActiveFeeConfig(campusId?: number): Promise<FeeConfig | undefined>;
+  getAllFeeConfigs(campusId?: number): Promise<FeeConfig[]>;
+  createFeeConfig(config: InsertFeeConfig): Promise<FeeConfig>;
+  getPayments(campusId?: number, periodLabel?: string): Promise<Payment[]>;
+  getPaymentsByStudent(studentId: number): Promise<Payment[]>;
+  upsertPayment(data: InsertPayment): Promise<Payment>;
+  updatePayment(id: number, data: Partial<InsertPayment>): Promise<Payment>;
+  getFinanceDashboardStats(campusId?: number): Promise<any>;
+  generatePaymentsForPeriod(campusId: number | undefined, periodLabel: string, billingPeriod: string, dueDate: string, createdById: string): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -153,6 +171,7 @@ export class DatabaseStorage implements IStorage {
         firstName: userData.firstName || '',
         lastName: userData.lastName || '',
         role: userData.role || 'student',
+        campusId: userData.campusId ?? null,
       })
       .returning();
     return user;
@@ -168,7 +187,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Student operations
-  async getAllStudents(): Promise<Student[]> {
+  async getAllStudents(campusId?: number): Promise<Student[]> {
+    if (campusId !== undefined) {
+      return await db.select().from(students).where(eq(students.campusId, campusId)).orderBy(desc(students.createdAt));
+    }
     return await db.select().from(students).orderBy(desc(students.createdAt));
   }
 
@@ -183,19 +205,28 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createStudent(student: InsertStudent): Promise<Student> {
-    // Generate unique student number
-    const year = new Date().getFullYear();
-    const countResult = await db.select({ count: count() }).from(students);
-    const studentCount = countResult[0].count + 1;
-    // Determine campus prefix if provided
+    // Derive enrollment year (last 2 digits) from enrollmentDate or current year
+    const enrollYear = student.enrollmentDate
+      ? student.enrollmentDate.slice(2, 4)
+      : String(new Date().getFullYear()).slice(2);
+
+    // Determine campus prefix from campus code
     let prefix = 'STU';
     if ((student as any).campusId) {
       const [camp] = await db.select().from(campuses).where(eq(campuses.id, (student as any).campusId));
-      if (camp) {
-        prefix = (camp.code || (camp.name || '').slice(0,4)).toString().replace(/\s+/g,'').toUpperCase();
+      if (camp?.code) {
+        prefix = camp.code.trim().toUpperCase();
       }
     }
-    const studentNumber = `${prefix}-${year}-${studentCount.toString().padStart(3, '0')}`;
+
+    // Count existing students for this campus+year combo to build a scoped sequence
+    const numberPrefix = `${prefix}-${enrollYear}`;
+    const countResult = await db
+      .select({ count: count() })
+      .from(students)
+      .where(like(students.studentNumber, `${numberPrefix}%`));
+    const seq = (countResult[0].count + 1).toString().padStart(3, '0');
+    const studentNumber = `${numberPrefix}${seq}`;
 
     const [newStudent] = await db
       .insert(students)
@@ -321,18 +352,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Statistics
-  async getDashboardStats(): Promise<any> {
-    const totalStudentsResult = await db.select({ count: count() }).from(students).where(eq(students.status, 'active'));
+  async getDashboardStats(campusId?: number): Promise<any> {
+    const campusFilter = campusId !== undefined ? and(eq(students.status, 'active'), eq(students.campusId, campusId)) : eq(students.status, 'active');
+    const totalStudentsResult = await db.select({ count: count() }).from(students).where(campusFilter);
     const totalSubjectsResult = await db.select({ count: count() }).from(subjects).where(eq(subjects.isActive, true));
     const activeLevelsResult = await db.select({ count: count() }).from(levels).where(eq(levels.isActive, true));
     
-    // Calculate average grade
-    const avgGradeResult = await db
-      .select({ 
-        avgScore: sql<number>`AVG(${grades.score})`,
-        avgMaxScore: sql<number>`AVG(${grades.maxScore})`
-      })
-      .from(grades);
+    // Calculate average grade (scoped by campus if provided)
+    const avgGradeQuery = campusId !== undefined
+      ? db.select({ avgScore: sql<number>`AVG(${grades.score})`, avgMaxScore: sql<number>`AVG(${grades.maxScore})` })
+          .from(grades).leftJoin(students, eq(grades.studentId, students.id)).where(eq(students.campusId, campusId))
+      : db.select({ avgScore: sql<number>`AVG(${grades.score})`, avgMaxScore: sql<number>`AVG(${grades.maxScore})` }).from(grades);
+    const avgGradeResult = await avgGradeQuery;
 
     const avgGrade = avgGradeResult[0].avgScore && avgGradeResult[0].avgMaxScore 
       ? (avgGradeResult[0].avgScore / avgGradeResult[0].avgMaxScore) * 100 
@@ -346,9 +377,9 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async getRecentActivity(): Promise<any[]> {
+  async getRecentActivity(campusId?: number): Promise<any[]> {
     // Get recent student enrollments
-    const recentStudents = await db
+    const studentQuery = db
       .select({
         id: students.id,
         type: sql<string>`'enrollment'`,
@@ -357,12 +388,15 @@ export class DatabaseStorage implements IStorage {
         timestamp: students.createdAt,
       })
       .from(students)
-      .leftJoin(levels, eq(students.currentLevelId, levels.id))
+      .leftJoin(levels, eq(students.currentLevelId, levels.id));
+    const recentStudents = await (campusId !== undefined
+      ? studentQuery.where(eq(students.campusId, campusId))
+      : studentQuery)
       .orderBy(desc(students.createdAt))
       .limit(5);
 
     // Get recent grade entries
-    const recentGrades = await db
+    const gradeQuery = db
       .select({
         id: grades.id,
         type: sql<string>`'grade'`,
@@ -372,7 +406,10 @@ export class DatabaseStorage implements IStorage {
       })
       .from(grades)
       .leftJoin(students, eq(grades.studentId, students.id))
-      .leftJoin(subjects, eq(grades.subjectId, subjects.id))
+      .leftJoin(subjects, eq(grades.subjectId, subjects.id));
+    const recentGrades = await (campusId !== undefined
+      ? gradeQuery.where(eq(students.campusId, campusId))
+      : gradeQuery)
       .orderBy(desc(grades.enteredAt))
       .limit(3);
 
@@ -407,7 +444,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Teacher operations
-  async getAllTeachers(): Promise<Teacher[]> {
+  async getAllTeachers(campusId?: number): Promise<Teacher[]> {
+    if (campusId !== undefined) {
+      // Filter teachers whose linked user belongs to this campus
+      return await db
+        .select({ id: teachers.id, userId: teachers.userId, firstName: teachers.firstName, lastName: teachers.lastName, email: teachers.email, employmentDate: teachers.employmentDate, specialties: teachers.specialties, status: teachers.status, createdAt: teachers.createdAt })
+        .from(teachers)
+        .innerJoin(users, eq(teachers.userId, users.id))
+        .where(and(eq(teachers.status, 'active'), eq(users.campusId, campusId)))
+        .orderBy(teachers.firstName);
+    }
     return await db.select().from(teachers).where(eq(teachers.status, 'active')).orderBy(teachers.firstName);
   }
 
@@ -490,6 +536,11 @@ export class DatabaseStorage implements IStorage {
   // Campus operations
   async getAllCampuses(): Promise<Campus[]> {
     return await db.select().from(campuses).orderBy(campuses.name);
+  }
+
+  async getCampus(id: number): Promise<Campus | undefined> {
+    const [campus] = await db.select().from(campuses).where(eq(campuses.id, id));
+    return campus;
   }
 
   async createCampus(campus: InsertCampus): Promise<Campus> {
@@ -575,6 +626,109 @@ export class DatabaseStorage implements IStorage {
       .insert(assessmentResults)
       .values({ assessmentId, studentId, score, enteredBy })
       .returning();
+    return created;
+  }
+
+  // Finance operations
+  async getActiveFeeConfig(campusId?: number): Promise<FeeConfig | undefined> {
+    const q = db.select().from(feeConfigs).orderBy(desc(feeConfigs.effectiveFrom)).limit(1);
+    if (campusId !== undefined) {
+      const [cfg] = await q.where(eq(feeConfigs.campusId, campusId));
+      return cfg;
+    }
+    const [cfg] = await q;
+    return cfg;
+  }
+
+  async getAllFeeConfigs(campusId?: number): Promise<FeeConfig[]> {
+    if (campusId !== undefined) {
+      return await db.select().from(feeConfigs).where(eq(feeConfigs.campusId, campusId)).orderBy(desc(feeConfigs.effectiveFrom));
+    }
+    return await db.select().from(feeConfigs).orderBy(desc(feeConfigs.effectiveFrom));
+  }
+
+  async createFeeConfig(config: InsertFeeConfig): Promise<FeeConfig> {
+    const [newConfig] = await db.insert(feeConfigs).values(config).returning();
+    return newConfig;
+  }
+
+  async getPayments(campusId?: number, periodLabel?: string): Promise<Payment[]> {
+    const conditions: any[] = [];
+    if (campusId !== undefined) conditions.push(eq(payments.campusId, campusId));
+    if (periodLabel) conditions.push(eq(payments.periodLabel, periodLabel));
+    if (conditions.length === 0) return await db.select().from(payments).orderBy(desc(payments.dueDate));
+    return await db.select().from(payments).where(and(...conditions)).orderBy(desc(payments.dueDate));
+  }
+
+  async getPaymentsByStudent(studentId: number): Promise<Payment[]> {
+    return await db.select().from(payments).where(eq(payments.studentId, studentId)).orderBy(desc(payments.dueDate));
+  }
+
+  async upsertPayment(data: InsertPayment): Promise<Payment> {
+    const existing = await db.select().from(payments).where(
+      and(eq(payments.studentId, data.studentId), eq(payments.periodLabel, data.periodLabel))
+    );
+    if (existing.length > 0) {
+      const [updated] = await db.update(payments).set({ ...data, updatedAt: new Date() }).where(eq(payments.id, existing[0].id)).returning();
+      return updated;
+    }
+    const [created] = await db.insert(payments).values(data).returning();
+    return created;
+  }
+
+  async updatePayment(id: number, data: Partial<InsertPayment>): Promise<Payment> {
+    const [updated] = await db.update(payments).set({ ...data, updatedAt: new Date() }).where(eq(payments.id, id)).returning();
+    return updated;
+  }
+
+  async getFinanceDashboardStats(campusId?: number): Promise<any> {
+    const campusCond = campusId !== undefined ? eq(payments.campusId, campusId) : undefined;
+    const allPayments = campusCond
+      ? await db.select().from(payments).where(campusCond)
+      : await db.select().from(payments);
+    const total = allPayments.length;
+    const paid = allPayments.filter(p => p.status === 'paid').length;
+    const unpaid = allPayments.filter(p => p.status === 'unpaid').length;
+    const partial = allPayments.filter(p => p.status === 'partial').length;
+    const flagged = allPayments.filter(p => p.status === 'flagged').length;
+    const totalRevenue = allPayments.reduce((s, p) => s + (p.amountPaid ?? 0), 0);
+    const totalOutstanding = allPayments.reduce((s, p) => s + Math.max(0, p.amountDue - (p.amountPaid ?? 0)), 0);
+    return { total, paid, unpaid, partial, flagged, totalRevenue, totalOutstanding };
+  }
+
+  async generatePaymentsForPeriod(
+    campusId: number | undefined,
+    periodLabel: string,
+    billingPeriod: string,
+    dueDate: string,
+    createdById: string
+  ): Promise<number> {
+    const config = await this.getActiveFeeConfig(campusId);
+    if (!config) throw new Error('No active fee config found for this campus');
+    const allStudents = campusId !== undefined
+      ? await db.select().from(students).where(and(eq(students.campusId, campusId), eq(students.status, 'active')))
+      : await db.select().from(students).where(eq(students.status, 'active'));
+    let created = 0;
+    for (const student of allStudents) {
+      const existing = await db.select().from(payments).where(
+        and(eq(payments.studentId, student.id), eq(payments.periodLabel, periodLabel))
+      );
+      if (existing.length === 0) {
+        await db.insert(payments).values({
+          studentId: student.id,
+          campusId: student.campusId ?? campusId,
+          feeConfigId: config.id,
+          billingPeriod,
+          periodLabel,
+          amountDue: config.baseFee,
+          amountPaid: 0,
+          status: 'unpaid',
+          dueDate,
+          recordedById: createdById,
+        });
+        created++;
+      }
+    }
     return created;
   }
 }
