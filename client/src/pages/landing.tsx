@@ -17,7 +17,7 @@ export default function Landing() {
               </div>
               <div>
                 <h1 className="text-xl font-bold text-slate-900">Al-Furqān Institute</h1>
-                <p className="text-xs text-slate-500">Institute Management System</p>
+                <p className="text-xs text-slate-500"> Management System</p>
               </div>
             </div>
             <Link href="/login">
