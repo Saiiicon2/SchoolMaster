@@ -214,6 +214,19 @@ function MarkRegister({
     onSave(entries);
   }
 
+  function getOverallPercentage(studentId: number): number {
+    if (assessments.length === 0) return 0;
+
+    let total = 0;
+    assessments.forEach((a) => {
+      const raw = marks[`${a.id}-${studentId}`];
+      const score = parseFloat(raw ?? "0");
+      total += isNaN(score) ? 0 : score;
+    });
+
+    return total / assessments.length;
+  }
+
   return (
     <div className="mt-6">
       <div className="flex items-center justify-between mb-3">
@@ -249,6 +262,9 @@ function MarkRegister({
                     <div className="text-xs text-slate-400 font-normal">/{a.totalMarks}</div>
                   </th>
                 ))}
+                <th className="px-3 py-2 text-center text-slate-600 font-medium min-w-[100px]">
+                  Overall %
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -271,11 +287,14 @@ function MarkRegister({
                       />
                     </td>
                   ))}
+                  <td className="px-3 py-1.5 text-center font-semibold text-slate-800">
+                    {getOverallPercentage(s.id).toFixed(1)}%
+                  </td>
                 </tr>
               ))}
               {students.length === 0 && (
                 <tr>
-                  <td colSpan={4 + assessments.length} className="px-4 py-6 text-center text-slate-400 text-sm">
+                  <td colSpan={5 + assessments.length} className="px-4 py-6 text-center text-slate-400 text-sm">
                     No students enrolled in this level.
                   </td>
                 </tr>
