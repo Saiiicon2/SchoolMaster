@@ -45,6 +45,7 @@ export default function TeacherDetailsModal({
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [selectedLevels, setSelectedLevels] = useState<number[]>([]);
+  const [selectedSubjects, setSelectedSubjects] = useState<number[]>([]);
 
   const { data: teacher, isLoading } = useQuery({
     queryKey: ["/api/teachers", teacherId],
@@ -62,6 +63,24 @@ export default function TeacherDetailsModal({
       return await response.json();
     },
     enabled: open && !!teacherId,
+  });
+
+  const { data: teacherSubjectAssignments = [] } = useQuery({
+    queryKey: ["/api/teachers", teacherId, "subjects"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", `/api/teachers/${teacherId}/subjects`);
+      return await response.json();
+    },
+    enabled: open && !!teacherId,
+  });
+
+  const { data: allSubjects = [] } = useQuery({
+    queryKey: ["/api/subjects"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/subjects");
+      return await response.json();
+    },
+    enabled: open && isAdmin,
   });
 
   const form = useForm<TeacherForm>({
@@ -92,7 +111,10 @@ export default function TeacherDetailsModal({
     if (teacherLevels) {
       setSelectedLevels(teacherLevels.map((tl: any) => tl.levelId));
     }
-  }, [teacher, teacherLevels, form]);
+    if (teacherSubjectAssignments) {
+      setSelectedSubjects(teacherSubjectAssignments.map((ts: any) => ts.subjectId));
+    }
+  }, [teacher, teacherLevels, teacherSubjectAssignments, form]);
 
   const updateTeacherMutation = useMutation({
     mutationFn: async (data: TeacherForm) => {
@@ -107,13 +129,11 @@ export default function TeacherDetailsModal({
       // Handle level assignments
       if (teacherLevels) {
         const currentLevelIds = teacherLevels.map((tl: any) => tl.levelId);
-        // Remove unselected levels
         for (const levelId of currentLevelIds) {
           if (!selectedLevels.includes(levelId)) {
             await apiRequest("DELETE", `/api/teachers/${teacherId}/levels/${levelId}`);
           }
         }
-        // Add newly selected levels
         for (const levelId of selectedLevels) {
           if (!currentLevelIds.includes(levelId)) {
             await apiRequest("POST", `/api/teachers/${teacherId}/levels`, { levelId });
@@ -121,8 +141,22 @@ export default function TeacherDetailsModal({
         }
       }
 
+      // Handle subject assignments
+      const currentSubjectIds = teacherSubjectAssignments.map((ts: any) => ts.subjectId);
+      for (const subjectId of currentSubjectIds) {
+        if (!selectedSubjects.includes(subjectId)) {
+          await apiRequest("DELETE", `/api/teachers/${teacherId}/subjects/${subjectId}`);
+        }
+      }
+      for (const subjectId of selectedSubjects) {
+        if (!currentSubjectIds.includes(subjectId)) {
+          await apiRequest("POST", `/api/teachers/${teacherId}/subjects`, { subjectId });
+        }
+      }
+
       await queryClient.invalidateQueries({ queryKey: ["/api/teachers"] });
       await queryClient.invalidateQueries({ queryKey: ["/api/teachers", teacherId] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/teachers", teacherId, "subjects"] });
       setIsEditing(false);
       onOpenChange(false);
     },
@@ -278,6 +312,21 @@ export default function TeacherDetailsModal({
               </div>
             )}
 
+            {selectedSubjects.length > 0 && (
+              <div>
+                <label className="text-sm font-medium text-slate-600">Assigned Subjects</label>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {allSubjects
+                    .filter((s: any) => selectedSubjects.includes(s.id))
+                    .map((subject: any) => (
+                      <Badge key={subject.id} className="bg-purple-100 text-purple-800">
+                        {subject.name}
+                      </Badge>
+                    ))}
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="text-sm font-medium text-slate-600">Status</label>
               <Badge className={teacher.status === "active" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}>
@@ -369,6 +418,33 @@ export default function TeacherDetailsModal({
                       />
                       <label htmlFor={`level-${level.id}`} className="text-sm cursor-pointer">
                         {level.name}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-slate-600 mb-2 block">Assign Subjects</label>
+                <div className="space-y-2 border rounded-md p-3 max-h-48 overflow-y-auto">
+                  {allSubjects.length === 0 && (
+                    <p className="text-sm text-slate-400">No subjects available</p>
+                  )}
+                  {allSubjects.map((subject: any) => (
+                    <div key={subject.id} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`subject-${subject.id}`}
+                        checked={selectedSubjects.includes(subject.id)}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedSubjects([...selectedSubjects, subject.id]);
+                          } else {
+                            setSelectedSubjects(selectedSubjects.filter((id) => id !== subject.id));
+                          }
+                        }}
+                      />
+                      <label htmlFor={`subject-${subject.id}`} className="text-sm cursor-pointer">
+                        {subject.name}
                       </label>
                     </div>
                   ))}

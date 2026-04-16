@@ -623,6 +623,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.delete('/api/teachers/:id/subjects/:subjectId', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(getUserId(req));
+      if (!isAdminOrSuper(user)) {
+        return res.status(403).json({ message: "Only admins can remove subject assignments" });
+      }
+      await storage.removeTeacherSubject(parseInt(req.params.id), parseInt(req.params.subjectId));
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error removing teacher subject:", error);
+      res.status(500).json({ message: "Failed to remove subject assignment" });
+    }
+  });
+
   app.put('/api/teachers/:id', isAuthenticated, async (req: any, res) => {
     try {
       const user = await storage.getUser(getUserId(req));

@@ -107,6 +107,7 @@ export interface IStorage {
   updateTeacher(id: number, teacher: Partial<InsertTeacher>): Promise<Teacher>;
   deleteTeacher(id: number): Promise<void>;
   assignTeacherToSubject(teacherId: number, subjectId: number): Promise<TeacherSubject>;
+  removeTeacherSubject(teacherId: number, subjectId: number): Promise<void>;
   getTeacherSubjects(teacherId: number): Promise<TeacherSubject[]>;
   assignTeacherToLevel(teacherId: number, levelId: number): Promise<TeacherLevel>;
   removeTeacherFromLevel(teacherId: number, levelId: number): Promise<void>;
@@ -500,6 +501,12 @@ export class DatabaseStorage implements IStorage {
       })
       .returning();
     return assignment;
+  }
+
+  async removeTeacherSubject(teacherId: number, subjectId: number): Promise<void> {
+    await db.delete(teacherSubjects).where(
+      and(eq(teacherSubjects.teacherId, teacherId), eq(teacherSubjects.subjectId, subjectId))
+    );
   }
 
   async getTeacherSubjects(teacherId: number): Promise<TeacherSubject[]> {
