@@ -41,7 +41,7 @@ export default function Teachers() {
     if (!isLoading && !isAuthenticated) {
       window.location.href = "/api/login";
     }
-    if (!isLoading && user && user.role !== 'admin') {
+    if (!isLoading && user && user.role !== 'admin' && user.role !== 'superadmin') {
       toast({
         title: "Access Denied",
         description: "Only administrators can manage teachers",

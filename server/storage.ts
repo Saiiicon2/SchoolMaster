@@ -246,7 +246,7 @@ export class DatabaseStorage implements IStorage {
 
   // Level operations
   async getAllLevels(): Promise<Level[]> {
-    return await db.select().from(levels).orderBy(levels.name);
+    return await db.select().from(levels).orderBy(levels.sortOrder, levels.name);
   }
 
   async getLevel(id: number): Promise<Level | undefined> {

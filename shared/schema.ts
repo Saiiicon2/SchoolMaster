@@ -42,6 +42,7 @@ export const levels = sqliteTable("levels", {
   name: text("name").notNull().unique(),
   description: text("description"),
   durationMonths: integer("duration_months").notNull().default(6),
+  sortOrder: integer("sort_order").notNull().default(0),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
   createdAt: integer("created_at", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
 });
@@ -55,6 +56,7 @@ export const students = sqliteTable("students", {
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
   email: text("email").notNull().unique(),
+  whatsappNumber: text("whatsapp_number"),
   currentLevelId: integer("current_level_id").references(() => levels.id),
   enrollmentDate: text("enrollment_date").notNull(),
   status: text("status").notNull().default("active"), // 'active', 'graduated', 'suspended'

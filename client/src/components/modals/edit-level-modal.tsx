@@ -23,6 +23,7 @@ const editLevelSchema = z.object({
   name: z.string().min(1, "Level name is required"),
   description: z.string().optional(),
   durationMonths: z.coerce.number().min(1, "Duration must be at least 1 month").default(6),
+  sortOrder: z.coerce.number().min(0).default(0),
   isActive: z.boolean().default(true),
 });
 
@@ -43,6 +44,7 @@ export default function EditLevelModal({ open, onOpenChange, level }: EditLevelM
       name: "",
       description: "",
       durationMonths: 6,
+      sortOrder: 0,
       isActive: true,
     },
   });
@@ -53,6 +55,7 @@ export default function EditLevelModal({ open, onOpenChange, level }: EditLevelM
       name: level.name || "",
       description: level.description || "",
       durationMonths: level.durationMonths || 6,
+      sortOrder: level.sortOrder ?? 0,
       isActive: Boolean(level.isActive),
     });
   }, [level, form]);
@@ -139,6 +142,20 @@ export default function EditLevelModal({ open, onOpenChange, level }: EditLevelM
                   <FormLabel>Duration (Months)</FormLabel>
                   <FormControl>
                     <Input type="number" min="1" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="sortOrder"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Display Order</FormLabel>
+                  <FormControl>
+                    <Input type="number" min="0" placeholder="0 = first, 1 = second…" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

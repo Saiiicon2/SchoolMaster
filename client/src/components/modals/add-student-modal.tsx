@@ -16,6 +16,7 @@ const addStudentSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
   email: z.string().email("Please enter a valid email address"),
+  whatsappNumber: z.string().optional(),
   currentLevelId: z.coerce.number().min(1, "Please select a level"),
   campusId: z.coerce.number().min(1, "Please select a campus"),
   enrollmentDate: z.string().min(1, "Enrollment date is required"),
@@ -38,6 +39,7 @@ export default function AddStudentModal({ open, onOpenChange, levels }: AddStude
       firstName: "",
       lastName: "",
       email: "",
+      whatsappNumber: "",
       currentLevelId: 0,
       campusId: 0,
       enrollmentDate: new Date().toISOString().split('T')[0],
@@ -132,6 +134,20 @@ export default function AddStudentModal({ open, onOpenChange, levels }: AddStude
                   <FormLabel>Email Address</FormLabel>
                   <FormControl>
                     <Input type="email" placeholder="Enter email address" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            
+            <FormField
+              control={form.control}
+              name="whatsappNumber"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>WhatsApp Number</FormLabel>
+                  <FormControl>
+                    <Input type="tel" placeholder="e.g. +27 81 234 5678" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

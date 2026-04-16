@@ -10,7 +10,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   BookOpen,
-  Layers,
   Users,
   CheckCircle2,
   XCircle,
@@ -33,17 +32,12 @@ interface TeacherProfile {
   status: string;
 }
 
-interface LevelWithSubjects {
+interface AssignedSubject {
   id: number;
   name: string;
   description?: string;
-  subjects: Subject[];
-}
-
-interface Subject {
-  id: number;
-  name: string;
   levelId: number;
+  levelName: string;
 }
 
 interface Student {
@@ -89,7 +83,7 @@ function StudentInfoModal({
   onClose,
 }: {
   student: Student | null;
-  level: LevelWithSubjects | null;
+  level: { id: number; name: string } | null;
   open: boolean;
   onClose: () => void;
 }) {
@@ -307,43 +301,37 @@ function MarkRegister({
   );
 }
 
-// ─── Level + Subject Panel ────────────────────────────────────────────────────
+// ─── Subject Panel ────────────────────────────────────────────────────────────
 
-function LevelSubjectPanel({
-  level,
+function SubjectPanel({
+  subject,
   teacher,
 }: {
-  level: LevelWithSubjects;
+  subject: AssignedSubject;
   teacher: TeacherProfile;
 }) {
   const { toast } = useToast();
-  const { user } = useAuth();
-  const [selectedSubjectId, setSelectedSubjectId] = useState<number | null>(
-    level.subjects[0]?.id ?? null
-  );
   const [attendanceDate, setAttendanceDate] = useState(
     () => new Date().toISOString().split("T")[0]
   );
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [studentModalOpen, setStudentModalOpen] = useState(false);
 
-  const selectedSubject = level.subjects.find((s) => s.id === selectedSubjectId) ?? null;
-
-  // Fetch students for this level
+  // Fetch students for this subject's level
   const { data: students = [] } = useQuery<Student[]>({
-    queryKey: [`/api/students/level/${level.id}`],
+    queryKey: [`/api/students/level/${subject.levelId}`],
     queryFn: async () => {
-      const r = await fetch(`/api/students/level/${level.id}`, { credentials: "include" });
+      const r = await fetch(`/api/students/level/${subject.levelId}`, { credentials: "include" });
       return r.json();
     },
   });
 
-  // Attendance
+  // Attendance scoped to this subject
   const { data: attendance = [], refetch: refetchAttendance } = useQuery<AttendanceRow[]>({
-    queryKey: [`/api/attendance/level/${level.id}`, attendanceDate],
+    queryKey: [`/api/attendance/subject/${subject.id}`, attendanceDate],
     queryFn: async () => {
       const r = await fetch(
-        `/api/attendance/level/${level.id}?date=${attendanceDate}`, { credentials: "include" }
+        `/api/attendance/subject/${subject.id}?date=${attendanceDate}`, { credentials: "include" }
       );
       return r.json();
     },
@@ -368,6 +356,7 @@ function LevelSubjectPanel({
       const records = students.map((s) => ({
         studentId: s.id,
         attendanceDate,
+        subjectId: subject.id,
         status: localAttendance[s.id] ?? "absent",
         note: null,
       }));
@@ -381,22 +370,20 @@ function LevelSubjectPanel({
     onError: () => toast({ title: "Error", description: "Could not save attendance", variant: "destructive" }),
   });
 
-  // Assessments for selected subject
+  // Assessments for this subject
   const { data: assessments = [] } = useQuery<Assessment[]>({
-    queryKey: [`/api/assessments/subject/${selectedSubjectId}`],
-    enabled: !!selectedSubjectId,
+    queryKey: [`/api/assessments/subject/${subject.id}`],
     queryFn: async () => {
-      const r = await fetch(`/api/assessments/subject/${selectedSubjectId}`, { credentials: "include" });
+      const r = await fetch(`/api/assessments/subject/${subject.id}`, { credentials: "include" });
       return r.json();
     },
   });
 
-  // Assessment results for selected subject
+  // Assessment results for this subject
   const { data: results = [], refetch: refetchResults } = useQuery<AssessmentResult[]>({
-    queryKey: [`/api/assessment-results/subject/${selectedSubjectId}`],
-    enabled: !!selectedSubjectId,
+    queryKey: [`/api/assessment-results/subject/${subject.id}`],
     queryFn: async () => {
-      const r = await fetch(`/api/assessment-results/subject/${selectedSubjectId}`, { credentials: "include" });
+      const r = await fetch(`/api/assessment-results/subject/${subject.id}`, { credentials: "include" });
       return r.json();
     },
   });
@@ -422,142 +409,119 @@ function LevelSubjectPanel({
       <XCircle className="h-4 w-4 text-red-400" />
     );
 
+  // Dummy level object for StudentInfoModal
+  const levelForModal = { id: subject.levelId, name: subject.levelName, subjects: [] };
+
   return (
     <div className="space-y-6">
-      {/* Subject tabs */}
-      {level.subjects.length > 0 ? (
-        <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
-          {level.subjects.map((subj) => (
-            <button
-              key={subj.id}
-              onClick={() => setSelectedSubjectId(subj.id)}
-              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                selectedSubjectId === subj.id
-                  ? "bg-primary text-white shadow-sm"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
+      {/* Attendance section */}
+      <div className="bg-white rounded-xl border border-slate-200 p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-slate-800 flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-primary" />
+            Attendance — {subject.name}
+          </h3>
+          <div className="flex items-center gap-3">
+            <Input
+              type="date"
+              value={attendanceDate}
+              onChange={(e) => setAttendanceDate(e.target.value)}
+              className="h-8 text-sm w-40"
+            />
+            <Button
+              size="sm"
+              onClick={() => saveAttendanceMutation.mutate()}
+              disabled={saveAttendanceMutation.isPending}
+              className="gap-1"
             >
-              <BookOpen className="h-3.5 w-3.5 inline mr-1.5 -mt-0.5" />
-              {subj.name}
-            </button>
-          ))}
+              <Save className="h-3.5 w-3.5" />
+              {saveAttendanceMutation.isPending ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </div>
+
+        {students.length === 0 ? (
+          <p className="text-sm text-slate-400 italic text-center py-4">
+            No students enrolled in {subject.levelName}.
+          </p>
+        ) : (
+          <div className="space-y-1 max-h-72 overflow-y-auto">
+            {students.map((student) => {
+              const status = localAttendance[student.id] ?? "absent";
+              return (
+                <div
+                  key={student.id}
+                  className="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-slate-50 transition-colors"
+                >
+                  <button
+                    className="flex items-center gap-3 text-left flex-1"
+                    onClick={() => { setSelectedStudent(student); setStudentModalOpen(true); }}
+                  >
+                    <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold shrink-0">
+                      {student.firstName[0]}{student.lastName[0]}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-slate-800">
+                        {student.lastName}, {student.firstName}
+                      </p>
+                      <p className="text-xs text-slate-400 font-mono">{student.studentNumber}</p>
+                    </div>
+                  </button>
+                  <div className="flex gap-1.5 items-center">
+                    {(["present", "late", "absent"] as const).map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => setStatus(student.id, s)}
+                        className={`px-2.5 py-1 rounded-md text-xs font-medium capitalize transition-colors border ${
+                          status === s
+                            ? s === "present"
+                              ? "bg-green-500 text-white border-green-500"
+                              : s === "late"
+                              ? "bg-amber-400 text-white border-amber-400"
+                              : "bg-red-400 text-white border-red-400"
+                            : "bg-white text-slate-500 border-slate-200 hover:bg-slate-100"
+                        }`}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                    {statusIcon(status)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Mark Register */}
+      {assessments.length === 0 ? (
+        <div className="bg-white rounded-xl border border-dashed border-slate-300 p-6 text-center">
+          <BookOpen className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+          <p className="text-sm text-slate-400">
+            No assessments have been added for <strong>{subject.name}</strong> yet.
+          </p>
+          <p className="text-xs text-slate-400 mt-1">
+            An admin or teacher with access can add assessments from the Grades &amp; Assessments page.
+          </p>
         </div>
       ) : (
-        <p className="text-sm text-slate-400 italic">No subjects assigned to this level yet.</p>
-      )}
-
-      {selectedSubject && (
-        <>
-          {/* Attendance section */}
-          <div className="bg-white rounded-xl border border-slate-200 p-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-slate-800 flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-primary" />
-                Attendance — {selectedSubject.name}
-              </h3>
-              <div className="flex items-center gap-3">
-                <Input
-                  type="date"
-                  value={attendanceDate}
-                  onChange={(e) => setAttendanceDate(e.target.value)}
-                  className="h-8 text-sm w-40"
-                />
-                <Button
-                  size="sm"
-                  onClick={() => saveAttendanceMutation.mutate()}
-                  disabled={saveAttendanceMutation.isPending}
-                  className="gap-1"
-                >
-                  <Save className="h-3.5 w-3.5" />
-                  {saveAttendanceMutation.isPending ? "Saving…" : "Save"}
-                </Button>
-              </div>
-            </div>
-
-            {students.length === 0 ? (
-              <p className="text-sm text-slate-400 italic text-center py-4">
-                No students enrolled in {level.name}.
-              </p>
-            ) : (
-              <div className="space-y-1 max-h-72 overflow-y-auto">
-                {students.map((student) => {
-                  const status = localAttendance[student.id] ?? "absent";
-                  return (
-                    <div
-                      key={student.id}
-                      className="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-slate-50 transition-colors"
-                    >
-                      <button
-                        className="flex items-center gap-3 text-left flex-1"
-                        onClick={() => { setSelectedStudent(student); setStudentModalOpen(true); }}
-                      >
-                        <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold shrink-0">
-                          {student.firstName[0]}{student.lastName[0]}
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-slate-800">
-                            {student.lastName}, {student.firstName}
-                          </p>
-                          <p className="text-xs text-slate-400 font-mono">{student.studentNumber}</p>
-                        </div>
-                      </button>
-                      <div className="flex gap-1.5 items-center">
-                        {(["present", "late", "absent"] as const).map((s) => (
-                          <button
-                            key={s}
-                            onClick={() => setStatus(student.id, s)}
-                            className={`px-2.5 py-1 rounded-md text-xs font-medium capitalize transition-colors border ${
-                              status === s
-                                ? s === "present"
-                                  ? "bg-green-500 text-white border-green-500"
-                                  : s === "late"
-                                  ? "bg-amber-400 text-white border-amber-400"
-                                  : "bg-red-400 text-white border-red-400"
-                                : "bg-white text-slate-500 border-slate-200 hover:bg-slate-100"
-                            }`}
-                          >
-                            {s}
-                          </button>
-                        ))}
-                        {statusIcon(status)}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Mark Register */}
-          {assessments.length === 0 ? (
-            <div className="bg-white rounded-xl border border-dashed border-slate-300 p-6 text-center">
-              <BookOpen className="h-8 w-8 text-slate-300 mx-auto mb-2" />
-              <p className="text-sm text-slate-400">
-                No assessments have been added for <strong>{selectedSubject.name}</strong> yet.
-              </p>
-              <p className="text-xs text-slate-400 mt-1">
-                An admin or teacher with access can add assessments from the Grades &amp; Assessments page.
-              </p>
-            </div>
-          ) : (
-            <div className="bg-white rounded-xl border border-slate-200 p-4">
-              <MarkRegister
-                students={students}
-                assessments={assessments}
-                results={results}
-                levelName={level.name}
-                subjectName={selectedSubject.name}
-                onSave={(entries) => saveMarksMutation.mutate(entries)}
-                saving={saveMarksMutation.isPending}
-              />
-            </div>
-          )}
-        </>
+        <div className="bg-white rounded-xl border border-slate-200 p-4">
+          <MarkRegister
+            students={students}
+            assessments={assessments}
+            results={results}
+            levelName={subject.levelName}
+            subjectName={subject.name}
+            onSave={(entries) => saveMarksMutation.mutate(entries)}
+            saving={saveMarksMutation.isPending}
+          />
+        </div>
       )}
 
       <StudentInfoModal
         student={selectedStudent}
-        level={level}
+        level={levelForModal}
         open={studentModalOpen}
         onClose={() => setStudentModalOpen(false)}
       />
@@ -579,7 +543,7 @@ export default function TeacherDashboard() {
   const { user: rawUser, isLoading: authLoading } = useAuth();
   const user = rawUser as AuthUser | undefined;
   const { toast } = useToast();
-  const [selectedLevelId, setSelectedLevelId] = useState<number | null>(null);
+  const [selectedSubjectId, setSelectedSubjectId] = useState<number | null>(null);
 
   // Fetch teacher profile
   const { data: teacher, isLoading: profileLoading } = useQuery<TeacherProfile>({
@@ -589,18 +553,18 @@ export default function TeacherDashboard() {
       if (!r.ok) throw new Error("Failed to load profile");
       return r.json();
     },
-    enabled: !!user,
+    enabled: !!user && user.role === "teacher",
   });
 
-  // Fetch teacher's assigned levels (with subjects)
-  const { data: levels = [], isLoading: levelsLoading } = useQuery<LevelWithSubjects[]>({
-    queryKey: ["/api/teacher/my-levels"],
+  // Fetch teacher's assigned subjects
+  const { data: subjects = [], isLoading: subjectsLoading } = useQuery<AssignedSubject[]>({
+    queryKey: ["/api/teacher/my-subjects"],
     queryFn: async () => {
-      const r = await fetch("/api/teacher/my-levels", { credentials: "include" });
-      if (!r.ok) throw new Error("Failed to load levels");
+      const r = await fetch("/api/teacher/my-subjects", { credentials: "include" });
+      if (!r.ok) throw new Error("Failed to load subjects");
       return r.json();
     },
-    enabled: !!user,
+    enabled: !!user && user.role === "teacher",
   });
 
   useEffect(() => {
@@ -610,12 +574,12 @@ export default function TeacherDashboard() {
   }, [user, authLoading]);
 
   useEffect(() => {
-    if (levels.length > 0 && selectedLevelId === null) {
-      setSelectedLevelId(levels[0].id);
+    if (subjects.length > 0 && selectedSubjectId === null) {
+      setSelectedSubjectId(subjects[0].id);
     }
-  }, [levels, selectedLevelId]);
+  }, [subjects, selectedSubjectId]);
 
-  if (authLoading || profileLoading) {
+  if (authLoading || (user?.role === "teacher" && profileLoading)) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-primary"></div>
@@ -625,7 +589,7 @@ export default function TeacherDashboard() {
 
   if (!user || user.role !== "teacher") return null;
 
-  const selectedLevel = levels.find((l) => l.id === selectedLevelId) ?? null;
+  const selectedSubject = subjects.find((s) => s.id === selectedSubjectId) ?? null;
 
   return (
     <div className="min-h-screen flex bg-slate-50">
@@ -638,7 +602,7 @@ export default function TeacherDashboard() {
               <h2 className="text-2xl font-bold text-slate-900">
                 Welcome, {teacher ? `${teacher.firstName} ${teacher.lastName}` : user.firstName ?? "Teacher"}
               </h2>
-              <p className="text-slate-500 text-sm mt-0.5">Teacher Dashboard — Select a level to begin</p>
+              <p className="text-slate-500 text-sm mt-0.5">Teacher Dashboard — Select a subject to begin</p>
             </div>
             <div className="flex items-center gap-3">
               <div className="text-right">
@@ -650,51 +614,47 @@ export default function TeacherDashboard() {
         </header>
 
         <div className="p-6 space-y-6">
-          {/* Level toggle cards */}
+          {/* Subject cards */}
           <div>
             <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3 flex items-center gap-2">
-              <Layers className="h-4 w-4" /> Your Assigned Levels
+              <BookOpen className="h-4 w-4" /> Your Assigned Subjects
             </h3>
 
-            {levelsLoading ? (
+            {subjectsLoading ? (
               <div className="flex gap-3">
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-20 w-40 rounded-xl bg-slate-200 animate-pulse" />
+                  <div key={i} className="h-20 w-44 rounded-xl bg-slate-200 animate-pulse" />
                 ))}
               </div>
-            ) : levels.length === 0 ? (
+            ) : subjects.length === 0 ? (
               <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center">
-                <Layers className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+                <BookOpen className="h-10 w-10 text-slate-300 mx-auto mb-2" />
                 <p className="text-slate-500 text-sm">
-                  You have not been assigned to any levels yet.
+                  You have not been assigned to any subjects yet.
                 </p>
                 <p className="text-slate-400 text-xs mt-1">
-                  Please ask your administrator to assign you to a level.
+                  Please ask your administrator to assign you to a subject.
                 </p>
               </div>
             ) : (
               <div className="flex flex-wrap gap-3">
-                {levels.map((level) => {
-                  const active = selectedLevelId === level.id;
+                {subjects.map((subj) => {
+                  const active = selectedSubjectId === subj.id;
                   return (
                     <button
-                      key={level.id}
-                      onClick={() => setSelectedLevelId(level.id)}
-                      className={`flex flex-col items-start px-5 py-4 rounded-xl border-2 transition-all shadow-sm min-w-[140px] ${
+                      key={subj.id}
+                      onClick={() => setSelectedSubjectId(subj.id)}
+                      className={`relative flex flex-col items-start px-5 py-4 rounded-xl border-2 transition-all shadow-sm min-w-[160px] ${
                         active
                           ? "border-primary bg-primary text-white shadow-md"
                           : "border-slate-200 bg-white text-slate-700 hover:border-primary/50 hover:shadow"
                       }`}
                     >
                       <div className={`text-xs font-semibold uppercase tracking-wide mb-1 ${active ? "text-white/70" : "text-slate-400"}`}>
-                        Level
+                        {subj.levelName}
                       </div>
-                      <div className={`text-lg font-bold leading-tight ${active ? "text-white" : "text-slate-800"}`}>
-                        {level.name}
-                      </div>
-                      <div className={`text-xs mt-1 flex items-center gap-1 ${active ? "text-white/70" : "text-slate-400"}`}>
-                        <BookOpen className="h-3 w-3" />
-                        {level.subjects.length} subject{level.subjects.length !== 1 ? "s" : ""}
+                      <div className={`text-base font-bold leading-tight ${active ? "text-white" : "text-slate-800"}`}>
+                        {subj.name}
                       </div>
                       {active && <ChevronRight className="h-4 w-4 absolute right-2 top-1/2 -translate-y-1/2 text-white/60" />}
                     </button>
@@ -704,28 +664,25 @@ export default function TeacherDashboard() {
             )}
           </div>
 
-          {/* Active level content */}
-          {selectedLevel && (
+          {/* Active subject content */}
+          {selectedSubject && (
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <div className="flex items-center gap-3 mb-5 pb-4 border-b border-slate-100">
                 <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <Layers className="h-5 w-5 text-primary" />
+                  <BookOpen className="h-5 w-5 text-primary" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold text-slate-900">{selectedLevel.name}</h2>
-                  {selectedLevel.description && (
-                    <p className="text-sm text-slate-500">{selectedLevel.description}</p>
-                  )}
+                  <h2 className="text-lg font-bold text-slate-900">{selectedSubject.name}</h2>
+                  <p className="text-sm text-slate-500">{selectedSubject.levelName}</p>
                 </div>
                 <div className="ml-auto flex gap-2">
                   <Badge variant="secondary" className="gap-1">
-                    <Users className="h-3 w-3" />
-                    {selectedLevel.subjects.length} Subject{selectedLevel.subjects.length !== 1 ? "s" : ""}
+                    <Users className="h-3 w-3" /> Students
                   </Badge>
                 </div>
               </div>
 
-              <LevelSubjectPanel level={selectedLevel} teacher={teacher!} />
+              <SubjectPanel subject={selectedSubject} teacher={teacher!} />
             </div>
           )}
         </div>

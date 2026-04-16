@@ -59,9 +59,15 @@ export async function ensureDbAndSeed() {
 							name TEXT NOT NULL UNIQUE,
 							description TEXT,
 							duration_months INTEGER NOT NULL DEFAULT 6,
+							sort_order INTEGER NOT NULL DEFAULT 0,
 							is_active BOOLEAN NOT NULL DEFAULT true,
 							created_at INTEGER
 						);`;
+
+						// Migration: add sort_order to levels
+						try {
+							await pg`ALTER TABLE levels ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0`;
+						} catch (e) { /* column may already exist */ }
 
 						await pg`CREATE TABLE IF NOT EXISTS students (
 							id SERIAL PRIMARY KEY,
@@ -71,6 +77,7 @@ export async function ensureDbAndSeed() {
 							first_name TEXT NOT NULL,
 							last_name TEXT NOT NULL,
 							email TEXT NOT NULL UNIQUE,
+							whatsapp_number TEXT,
 							current_level_id INTEGER REFERENCES levels(id),
 							enrollment_date TEXT NOT NULL,
 							status TEXT NOT NULL DEFAULT 'active',
@@ -86,6 +93,16 @@ export async function ensureDbAndSeed() {
 							created_at INTEGER,
 							UNIQUE(student_id, attendance_date)
 						);`;
+
+						// Migration: add subject_id to attendance for per-subject attendance
+						try {
+							await pg`ALTER TABLE attendance ADD COLUMN IF NOT EXISTS subject_id INTEGER`;
+						} catch (e) { /* column may already exist */ }
+
+						// Migration: add whatsapp_number to students
+						try {
+							await pg`ALTER TABLE students ADD COLUMN IF NOT EXISTS whatsapp_number TEXT`;
+						} catch (e) { /* column may already exist */ }
 
 						// Other tables (subjects, teachers, assessments, grades, forums, etc.)
 						await pg`CREATE TABLE IF NOT EXISTS subjects (
@@ -332,11 +349,20 @@ export async function ensureDbAndSeed() {
 						name TEXT NOT NULL UNIQUE,
 						description TEXT,
 						duration_months INTEGER NOT NULL DEFAULT 6,
+						sort_order INTEGER NOT NULL DEFAULT 0,
 						is_active INTEGER NOT NULL DEFAULT 1,
 						created_at INTEGER
 					);
 				`;
 				sqlite.exec(createLevelsSQL);
+				// Migration: add sort_order to existing levels table
+				try {
+					const lvlCols = sqlite.prepare("PRAGMA table_info('levels')").all();
+					if (!lvlCols.some((c: any) => c.name === 'sort_order')) {
+						sqlite.exec('ALTER TABLE levels ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;');
+						console.log('Migrated levels table: added sort_order column');
+					}
+				} catch (e) { /* ignore */ }
 
 				const createCampusesSQL = `
 					CREATE TABLE IF NOT EXISTS campuses (
@@ -359,6 +385,7 @@ export async function ensureDbAndSeed() {
 						first_name TEXT NOT NULL,
 						last_name TEXT NOT NULL,
 						email TEXT NOT NULL UNIQUE,
+						whatsapp_number TEXT,
 						current_level_id INTEGER,
 						enrollment_date TEXT NOT NULL,
 						status TEXT NOT NULL DEFAULT 'active',
@@ -366,6 +393,14 @@ export async function ensureDbAndSeed() {
 					);
 				`;
 				sqlite.exec(createStudentsSQL);
+				// Migration: add whatsapp_number to existing students table
+				try {
+					const stuCols = sqlite.prepare("PRAGMA table_info('students')").all();
+					if (!stuCols.some((c: any) => c.name === 'whatsapp_number')) {
+						sqlite.exec('ALTER TABLE students ADD COLUMN whatsapp_number TEXT;');
+						console.log('Migrated students table: added whatsapp_number column');
+					}
+				} catch (e) { /* ignore */ }
 
 				const createAttendanceSQL = `
 					CREATE TABLE IF NOT EXISTS attendance (
@@ -379,6 +414,14 @@ export async function ensureDbAndSeed() {
 					);
 				`;
 				sqlite.exec(createAttendanceSQL);
+				// Migration: add subject_id to attendance for per-subject attendance
+				try {
+					const attCols = sqlite.prepare("PRAGMA table_info('attendance')").all();
+					if (!attCols.some((c: any) => c.name === 'subject_id')) {
+						sqlite.exec('ALTER TABLE attendance ADD COLUMN subject_id INTEGER;');
+						console.log('Migrated attendance table: added subject_id column');
+					}
+				} catch (e) { /* ignore */ }
 
 				const createSubjectsSQL = `
 					CREATE TABLE IF NOT EXISTS subjects (

@@ -200,29 +200,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const now = Date.now();
       if (pg) {
         for (const r of records) {
-          await pg`
-            INSERT INTO attendance (student_id, attendance_date, status, note, created_at)
-            VALUES (${r.studentId}, ${r.attendanceDate}, ${r.status}, ${r.note || null}, ${now})
-            ON CONFLICT (student_id, attendance_date) DO UPDATE SET
-              status = EXCLUDED.status,
-              note = EXCLUDED.note,
-              created_at = EXCLUDED.created_at
-          `;
+          if (r.subjectId) {
+            // Per-subject attendance: delete existing then insert
+            await pg`DELETE FROM attendance WHERE student_id = ${r.studentId} AND attendance_date = ${r.attendanceDate} AND subject_id = ${r.subjectId}`;
+            await pg`INSERT INTO attendance (student_id, attendance_date, status, note, subject_id, created_at) VALUES (${r.studentId}, ${r.attendanceDate}, ${r.status}, ${r.note || null}, ${r.subjectId}, ${now})`;
+          } else {
+            await pg`
+              INSERT INTO attendance (student_id, attendance_date, status, note, created_at)
+              VALUES (${r.studentId}, ${r.attendanceDate}, ${r.status}, ${r.note || null}, ${now})
+              ON CONFLICT (student_id, attendance_date) DO UPDATE SET
+                status = EXCLUDED.status,
+                note = EXCLUDED.note,
+                created_at = EXCLUDED.created_at
+            `;
+          }
         }
         res.json({ success: true });
       } else {
-        const stmt = sqlite.prepare(`
-          INSERT INTO attendance (student_id, attendance_date, status, note, created_at)
-          VALUES (?, ?, ?, ?, ?)
-          ON CONFLICT(student_id, attendance_date) DO UPDATE SET
-            status=excluded.status,
-            note=excluded.note,
-            created_at=excluded.created_at
-        `);
-
         const insertMany = sqlite.transaction((items: any[]) => {
           for (const r of items) {
-            stmt.run(r.studentId, r.attendanceDate, r.status, r.note || null, now);
+            if (r.subjectId) {
+              // Per-subject attendance: delete existing then insert
+              sqlite.prepare(`DELETE FROM attendance WHERE student_id = ? AND attendance_date = ? AND subject_id = ?`).run(r.studentId, r.attendanceDate, r.subjectId);
+              sqlite.prepare(`INSERT INTO attendance (student_id, attendance_date, status, note, subject_id, created_at) VALUES (?, ?, ?, ?, ?, ?)`).run(r.studentId, r.attendanceDate, r.status, r.note || null, r.subjectId, now);
+            } else {
+              sqlite.prepare(`
+                INSERT INTO attendance (student_id, attendance_date, status, note, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(student_id, attendance_date) DO UPDATE SET
+                  status=excluded.status,
+                  note=excluded.note,
+                  created_at=excluded.created_at
+              `).run(r.studentId, r.attendanceDate, r.status, r.note || null, now);
+            }
           }
         });
 
@@ -873,6 +883,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     } catch (error) {
       console.error('Error fetching level attendance:', error);
+      res.status(500).json({ message: 'Failed to fetch attendance' });
+    }
+  });
+
+  // Subjects assigned to the current logged-in teacher (with level info)
+  app.get('/api/teacher/my-subjects', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = getUserId(req);
+      const teacher = await storage.getTeacherByUserId(userId);
+      if (!teacher) {
+        return res.status(404).json({ message: "Teacher profile not found" });
+      }
+      const teacherSubjectRows = await storage.getTeacherSubjects(teacher.id);
+      const subjectIds = teacherSubjectRows.filter((ts) => ts.isActive).map((ts) => ts.subjectId);
+      if (subjectIds.length === 0) return res.json([]);
+
+      // Fetch subject + level details
+      if (sqlite) {
+        const placeholders = subjectIds.map(() => '?').join(', ');
+        const rows = sqlite.prepare(`
+          SELECT s.id, s.name, s.description, s.level_id as levelId,
+                 l.name as levelName
+          FROM subjects s
+          LEFT JOIN levels l ON s.level_id = l.id
+          WHERE s.id IN (${placeholders}) AND s.is_active = 1
+          ORDER BY l.name, s.name
+        `).all(...subjectIds);
+        res.json(rows);
+      } else if (pg) {
+        const rows = await pg`
+          SELECT s.id, s.name, s.description, s.level_id as "levelId",
+                 l.name as "levelName"
+          FROM subjects s
+          LEFT JOIN levels l ON s.level_id = l.id
+          WHERE s.id = ANY(${subjectIds}) AND s.is_active = true
+          ORDER BY l.name, s.name
+        `;
+        res.json(rows);
+      }
+    } catch (error) {
+      console.error("Error fetching teacher subjects:", error);
+      res.status(500).json({ message: "Failed to fetch teacher subjects" });
+    }
+  });
+
+  // Attendance for students in a subject's level, filtered by subject_id for per-subject records
+  app.get('/api/attendance/subject/:subjectId', isAuthenticated, async (req: any, res) => {
+    try {
+      const date = (req.query.date as string) || new Date().toISOString().split('T')[0];
+      const subjectId = parseInt(req.params.subjectId);
+      if (sqlite) {
+        const rows = sqlite.prepare(`
+          SELECT s.id as studentId, s.student_number as studentNumber, s.first_name as firstName, s.last_name as lastName,
+                 a.status as status, a.note as note
+          FROM students s
+          INNER JOIN subjects sub ON sub.id = ?
+          LEFT JOIN attendance a ON s.id = a.student_id AND a.attendance_date = ? AND a.subject_id = ?
+          WHERE s.current_level_id = sub.level_id AND s.status = 'active'
+          ORDER BY s.last_name, s.first_name
+        `).all(subjectId, date, subjectId);
+        res.json(rows);
+      } else if (pg) {
+        const rows = await pg`
+          SELECT s.id as "studentId", s.student_number as "studentNumber", s.first_name as "firstName", s.last_name as "lastName",
+                 a.status as status, a.note as note
+          FROM students s
+          INNER JOIN subjects sub ON sub.id = ${subjectId}
+          LEFT JOIN attendance a ON s.id = a.student_id AND a.attendance_date = ${date} AND a.subject_id = ${subjectId}
+          WHERE s.current_level_id = sub.level_id AND s.status = 'active'
+          ORDER BY s.last_name, s.first_name
+        `;
+        res.json(rows);
+      }
+    } catch (error) {
+      console.error('Error fetching subject attendance:', error);
       res.status(500).json({ message: 'Failed to fetch attendance' });
     }
   });
