@@ -112,7 +112,7 @@ export default function Teachers() {
     );
   }
 
-  if (!isAuthenticated || user?.role !== 'admin') {
+  if (!isAuthenticated || (user?.role !== 'admin' && user?.role !== 'superadmin')) {
     return null;
   }
 
