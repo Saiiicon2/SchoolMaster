@@ -51,8 +51,8 @@ export async function ensureDbAndSeed() {
 							code TEXT NOT NULL UNIQUE,
 							address TEXT,
 							is_active BOOLEAN NOT NULL DEFAULT true,
-						created_at BIGINT
-						);`;
+							created_at BIGINT
+						)`;
 
 						await pg`CREATE TABLE IF NOT EXISTS levels (
 							id SERIAL PRIMARY KEY,
@@ -82,7 +82,7 @@ export async function ensureDbAndSeed() {
 							enrollment_date TEXT NOT NULL,
 							status TEXT NOT NULL DEFAULT 'active',
 							created_at BIGINT
-						);
+						)`;
 
 						await pg`CREATE TABLE IF NOT EXISTS attendance (
 							id SERIAL PRIMARY KEY,
@@ -112,8 +112,8 @@ export async function ensureDbAndSeed() {
 							level_id INTEGER,
 							created_by_id TEXT,
 							is_active BOOLEAN NOT NULL DEFAULT true,
-						created_at BIGINT
-						);`;
+							created_at BIGINT
+						)`;
 
 						await pg`CREATE TABLE IF NOT EXISTS teachers (
 							id SERIAL PRIMARY KEY,
