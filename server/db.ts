@@ -226,6 +226,31 @@ export async function ensureDbAndSeed() {
 							updated_at BIGINT
 						)`;
 
+						// Migration: convert INTEGER timestamp columns to BIGINT on existing tables
+						const timestampMigrations: [string, string][] = [
+							['users', 'created_at'], ['users', 'updated_at'],
+							['campuses', 'created_at'],
+							['levels', 'created_at'],
+							['students', 'created_at'],
+							['attendance', 'created_at'],
+							['subjects', 'created_at'],
+							['teachers', 'created_at'],
+							['teacher_levels', 'created_at'],
+							['assessments', 'created_at'],
+							['assessment_results', 'entered_at'],
+							['grades', 'entered_at'],
+							['level_progressions', 'completed_at'],
+							['forums', 'created_at'],
+							['forum_posts', 'created_at'], ['forum_posts', 'updated_at'],
+							['fee_configs', 'created_at'],
+							['payments', 'created_at'], ['payments', 'updated_at'],
+						];
+						for (const [table, col] of timestampMigrations) {
+							try {
+								await pg.unsafe(`ALTER TABLE ${table} ALTER COLUMN ${col} TYPE BIGINT USING ${col}::BIGINT`);
+							} catch (e) { /* already BIGINT or table doesn't exist */ }
+						}
+
 						// Seed users
 						const usersCountRow = await pg`SELECT count(*) AS count FROM users`;
 						const usersCount = Number(usersCountRow?.[0]?.count ?? 0);
