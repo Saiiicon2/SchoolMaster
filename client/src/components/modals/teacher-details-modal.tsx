@@ -233,7 +233,7 @@ export default function TeacherDetailsModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <div className="flex items-center justify-between">
             <DialogTitle>{isEditing ? "Edit Teacher" : `${teacher.firstName} ${teacher.lastName}`}</DialogTitle>
@@ -261,6 +261,7 @@ export default function TeacherDetailsModal({
           </div>
         </DialogHeader>
 
+        <div className="overflow-y-auto flex-1 pr-1">
         {!isEditing ? (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
@@ -462,6 +463,7 @@ export default function TeacherDetailsModal({
             </form>
           </Form>
         )}
+        </div>
       </DialogContent>
     </Dialog>
   );
