@@ -136,6 +136,15 @@ export async function ensureDbAndSeed() {
 							created_at BIGINT
 						)`;
 
+						await pg`CREATE TABLE IF NOT EXISTS teacher_subjects (
+							id SERIAL PRIMARY KEY,
+							teacher_id INTEGER NOT NULL REFERENCES teachers(id),
+							subject_id INTEGER NOT NULL REFERENCES subjects(id),
+							assigned_date TEXT NOT NULL,
+							is_active BOOLEAN NOT NULL DEFAULT true,
+							created_at BIGINT
+						)`;
+
 						await pg`CREATE TABLE IF NOT EXISTS assessments (
 							id SERIAL PRIMARY KEY,
 							subject_id INTEGER NOT NULL,
@@ -236,6 +245,7 @@ export async function ensureDbAndSeed() {
 							['subjects', 'created_at'],
 							['teachers', 'created_at'],
 							['teacher_levels', 'created_at'],
+							['teacher_subjects', 'created_at'],
 							['assessments', 'created_at'],
 							['assessment_results', 'entered_at'],
 							['grades', 'entered_at'],

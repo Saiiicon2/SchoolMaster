@@ -406,16 +406,18 @@ export default function TeacherDetailsModal({
                 <div className="space-y-2 border rounded-md p-3">
                   {levels.map((level) => (
                     <div key={level.id} className="flex items-center space-x-2">
-                      <Checkbox
+                      <input
+                        type="checkbox"
                         id={`level-${level.id}`}
                         checked={selectedLevels.includes(level.id)}
-                        onCheckedChange={(checked) => {
-                          if (checked) {
+                        onChange={(e) => {
+                          if (e.target.checked) {
                             setSelectedLevels([...selectedLevels, level.id]);
                           } else {
                             setSelectedLevels(selectedLevels.filter((id) => id !== level.id));
                           }
                         }}
+                        className="h-4 w-4 cursor-pointer accent-primary"
                       />
                       <label htmlFor={`level-${level.id}`} className="text-sm cursor-pointer">
                         {level.name}
@@ -433,16 +435,18 @@ export default function TeacherDetailsModal({
                   )}
                   {allSubjects.map((subject: any) => (
                     <div key={subject.id} className="flex items-center space-x-2">
-                      <Checkbox
+                      <input
+                        type="checkbox"
                         id={`subject-${subject.id}`}
                         checked={selectedSubjects.includes(subject.id)}
-                        onCheckedChange={(checked) => {
-                          if (checked) {
+                        onChange={(e) => {
+                          if (e.target.checked) {
                             setSelectedSubjects([...selectedSubjects, subject.id]);
                           } else {
                             setSelectedSubjects(selectedSubjects.filter((id) => id !== subject.id));
                           }
                         }}
+                        className="h-4 w-4 cursor-pointer accent-primary"
                       />
                       <label htmlFor={`subject-${subject.id}`} className="text-sm cursor-pointer">
                         {subject.name}
