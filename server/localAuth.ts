@@ -106,11 +106,12 @@ await storage.createUser({
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = await storage.createUser({
+      id: randomUUID(),
       email,
       password: hashedPassword,
       firstName,
       lastName,
-      role: 'admin',
+      role: 'student',
     });
 
     const { password: _, ...userWithoutPassword } = user;

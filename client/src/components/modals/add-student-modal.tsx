@@ -12,6 +12,12 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 
+const currentYear = new Date().getFullYear();
+const ENROLLMENT_DATE_OPTIONS = [
+  { value: `${currentYear}-01-01`, label: `January ${currentYear}` },
+  { value: `${currentYear}-06-01`, label: `June ${currentYear}` },
+];
+
 const addStudentSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
@@ -19,7 +25,10 @@ const addStudentSchema = z.object({
   whatsappNumber: z.string().optional(),
   currentLevelId: z.coerce.number().min(1, "Please select a level"),
   campusId: z.coerce.number().min(1, "Please select a campus"),
-  enrollmentDate: z.string().min(1, "Enrollment date is required"),
+  enrollmentDate: z.enum(
+    ENROLLMENT_DATE_OPTIONS.map((o) => o.value) as [string, ...string[]],
+    { errorMap: () => ({ message: "Please select an enrollment intake" }) }
+  ),
 });
 
 type AddStudentForm = z.infer<typeof addStudentSchema>;
@@ -42,7 +51,7 @@ export default function AddStudentModal({ open, onOpenChange, levels }: AddStude
       whatsappNumber: "",
       currentLevelId: 0,
       campusId: 0,
-      enrollmentDate: new Date().toISOString().split('T')[0],
+      enrollmentDate: ENROLLMENT_DATE_OPTIONS[0].value,
     },
   });
 
@@ -209,7 +218,18 @@ export default function AddStudentModal({ open, onOpenChange, levels }: AddStude
                 <FormItem>
                   <FormLabel>Enrollment Date</FormLabel>
                   <FormControl>
-                    <Input type="date" {...field} />
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select intake" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ENROLLMENT_DATE_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </FormControl>
                   <FormMessage />
                 </FormItem>
