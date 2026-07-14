@@ -21,7 +21,7 @@ export async function ensureDbAndSeed() {
     const { default: postgres } = await import('postgres');
     const { drizzle: drizzlePg } = await import('drizzle-orm/postgres-js');
     const ssl = process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined;
-    pg = postgres(process.env.DATABASE_URL!, { ssl });
+    pg = postgres(process.env.DATABASE_URL!, { ssl, prepare: false });
     db = drizzlePg(pg, { schema });
     console.log('✓ Database client initialized (Postgres)');
 
